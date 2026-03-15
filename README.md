@@ -38,4 +38,6 @@
 
 ***to test via CMD and manifest: "ollama run llama3.2 "Hallo, bist du da?"***
 
+***Open Mic is still in testmode, normaly you must call her with her name "AION" that she react and start listening to you***
+
 ***HF & GL***
