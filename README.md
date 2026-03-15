@@ -28,3 +28,7 @@
 ***its a part of the CMD window. always move with CMD window***
 
 ***you cant type or speack with "hold left STRG"***
+
+***yes full control, the KI can open programms etc. but delete is deisabled that you must change in the code or add some owen things you like***
+
+***HF & GL***
