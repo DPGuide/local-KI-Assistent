@@ -107,22 +107,22 @@ void callBrain(std::string p) {
 
         // 5. ANTWORT FÜR DAS GESICHT SPEICHERN
         std::ofstream out("ai_answer.txt", std::ios::trunc);
-		out << aiAnswer;
-		out.close();
-		
-		// 6. WEIBLICHE STIMME GENERIEREN (Piper)
-		if (!aiAnswer.empty()) {
-			talking = true;
-			
-			// Wir nutzen Piper mit einer deutschen Frauenstimme (z.B. ramona.onnx)
-			// 'type' schickt den Inhalt der Datei an Piper
-			std::string voiceCmd = "type ai_answer.txt | piper.exe --model de_DE-ramona-medium.onnx --output_file response.wav";
-			std::system(voiceCmd.c_str());
-		
-			// Die erzeugte Datei abspielen
-			std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
-			
-			talking = false;
+        out << aiAnswer;
+        out.close();
+        
+        // 6. WEIBLICHE STIMME GENERIEREN (Piper)
+        if (!aiAnswer.empty()) {
+            talking = true;
+            
+            // CMD-Syntax: Wir schieben die Textdatei mit '<' direkt in Piper
+            // ACHTUNG: Hier steht jetzt dein richtiger Modell-Name "voice.onnx"!
+            std::string voiceCmd = "piper.exe --model voice.onnx --output_file response.wav < ai_answer.txt";
+            std::system(voiceCmd.c_str());
+        
+            // Die erzeugte Datei abspielen
+            std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
+            
+            talking = false;
         }
     } else {
         logAion("Fehler bei der Verbindung zum KI-Kern. Status: " + std::to_string(static_cast<int>(response.getStatus())));
