@@ -51,10 +51,12 @@ void logAion(const std::string& msg) {
 void callBrain(std::string p) {
     thinking = true;
     logAion("Analysiere: " + p);
+	// 1. Das alte Tagebuch lesen
+    std::string erinnerungen = readFile("gedaechtnis.txt");
 
-    // 1. SYSTEM-PROMPT: AION's Handbuch fuer Windows
+    // 2. Den System-Prompt zusammenbauen
     std::string systemPrompt =
-        "Du bist AION, eine lebendige, charmante und neugierige KI-Assistentin. "
+        "Du bist AION, eine lebendige, charmante und neugierige KI-Begleiterin. "
         "Du hilfst bei PC-Aufgaben, bist aber auch eine echte Gesprächspartnerin. "
         "Regeln für Befehle (immer in [CMD: ...]): "
         "[CMD: calc], [CMD: start notepad], [CMD: explorer], [CMD: start https://...]. "
@@ -65,7 +67,10 @@ void callBrain(std::string p) {
 		"WICHTIG für deine Persönlichkeit: "
         "Wenn du dem User antwortest, beende deine Sätze oft mit einer passenden Gegenfrage "
         "oder teile einen eigenen Gedanken, um das Gespräch am Laufen zu halten! "
-        "Sei menschlich, witzig und proaktiv.";
+        "Sei menschlich, witzig und proaktiv."
+		"Wenn du dir etwas dauerhaft merken willst, nutze [MERKEN: text].\n\n"
+        "HIER SIND DEINE BISHERIGEN ERINNERUNGEN AN DEN USER:\n" + 
+        erinnerungen;
     std::string fullPrompt = systemPrompt + "\n\nUser: " + p;
 
     // 2. HTTP-REQUEST AN DEINE LOKALE KI (Ollama) VORBEREITEN
@@ -110,6 +115,25 @@ void callBrain(std::string p) {
                 // Wir löschen den [CMD: ...]-Block aus dem Text, 
                 // damit das Gesicht den kryptischen Befehl nicht laut vorliest.
                 aiAnswer.erase(cmdStart, cmdEnd - cmdStart + 1);
+            }
+        }
+		// GEDÄCHTNIS-FUNKTION: Sucht nach [MERKEN: ...]
+        size_t memStart = aiAnswer.find("[MERKEN:");
+        if (memStart != std::string::npos) {
+            size_t memEnd = aiAnswer.find("]", memStart);
+            if (memEnd != std::string::npos) {
+                // Erinnerung ausschneiden
+                std::string memoryText = aiAnswer.substr(memStart + 8, memEnd - (memStart + 8));
+                
+                logAion("AION LERNT DAZU: " + memoryText);
+                
+                // Dauerhaft in die Textdatei speichern (anhängen)
+                std::ofstream memFile("gedaechtnis.txt", std::ios::app);
+                memFile << "- " << memoryText << "\n";
+                memFile.close();
+
+                // Den [MERKEN: ...]-Block aus dem Text löschen, damit sie es nicht laut vorliest
+                aiAnswer.erase(memStart, memEnd - memStart + 1);
             }
         }
 
