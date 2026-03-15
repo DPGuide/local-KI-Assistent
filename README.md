@@ -1,6 +1,6 @@
 ***"g++ main_ki.cpp -I"C:\SFML\include" -L"C:\SFML\lib" -lsfml-graphics -lsfml-window -lsfml-audio -lsfml-system -lsfml-network -lgdi32 -lwinmm -o aion_nexus.exe"***
 
-***files you need***
+***files you need from whisper-bin-x64 & piper_windows_amd64 & SFML***
 + sfml-audio-3.dll
 + sfml-graphics-3.dll
 + sfml-network-3.dll
