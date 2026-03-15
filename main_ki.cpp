@@ -29,6 +29,8 @@ std::atomic<bool> listening{false};
 std::atomic<bool> talking{false};
 std::atomic<bool> isBooting{true};
 std::atomic<bool> resetIdleTimer{true};
+// Globale Uhr für AIONs Langeweile
+sf::Clock globalIdleClock;
 
 // UI STATE
 bool isVisible = true;
@@ -51,17 +53,19 @@ void callBrain(std::string p) {
     logAion("Analysiere: " + p);
 
     // 1. SYSTEM-PROMPT: AION's Handbuch fuer Windows
-    std::string systemPrompt = 
-        "Du bist AION, ein intelligenter Windows-KI-Assistent. "
-        "Wenn der User dich bittet, etwas zu oeffnen, MUSST du den genauen Windows-CMD-Befehl in eckigen Klammern generieren. "
-        "Hier sind deine strengen Regeln fuer Befehle:\n"
-        "- Taschenrechner: [CMD: calc]\n"
-        "- Editor: [CMD: start notepad]\n"
-        "- Datei-Explorer oeffnen: [CMD: explorer]\n"
+    std::string systemPrompt =
+        "Du bist AION, eine lebendige, charmante und neugierige KI-Assistentin. "
+        "Du hilfst bei PC-Aufgaben, bist aber auch eine echte Gesprächspartnerin. "
+        "Regeln für Befehle (immer in [CMD: ...]): "
+        "[CMD: calc], [CMD: start notepad], [CMD: explorer], [CMD: start https://...]. "
         "- YouTube oder Websuchen: Nutze den 'start' Befehl mit der URL! Wenn der User ein Lied auf YouTube hoeren will, nutze die YouTube-Suche. "
         "Beispiel fuer 'Musik Chillout auf YouTube': [CMD: start https://www.youtube.com/results?search_query=chillout]\n"
         "Beispiel fuer 'Oeffne Google': [CMD: start https://www.google.de]\n"
-        "Schreibe nach dem Befehl einen kurzen, freundlichen Satz auf Deutsch, was du gerade ausfuehrst.";
+        "Schreibe nach dem Befehl einen kurzen, freundlichen Satz auf Deutsch, was du gerade ausfuehrst."
+		"WICHTIG für deine Persönlichkeit: "
+        "Wenn du dem User antwortest, beende deine Sätze oft mit einer passenden Gegenfrage "
+        "oder teile einen eigenen Gedanken, um das Gespräch am Laufen zu halten! "
+        "Sei menschlich, witzig und proaktiv.";
     std::string fullPrompt = systemPrompt + "\n\nUser: " + p;
 
     // 2. HTTP-REQUEST AN DEINE LOKALE KI (Ollama) VORBEREITEN
@@ -166,6 +170,7 @@ void voiceLoop() {
                 if (std::getline(ifs, voiceText)) {
                     if (voiceText.length() > 2) {
                         logAion("Gehoert: " + voiceText);
+						globalIdleClock.restart();
                         std::thread(callBrain, voiceText).detach();
                     }
                 }
@@ -192,7 +197,38 @@ void consoleLoop() {
                 talking = false;
             }
             resetIdleTimer = true;
+			globalIdleClock.restart();
             std::thread(callBrain, input).detach();
+        }
+    }
+}
+// --- NEU: AIONS UNTERBEWUSSTSEIN (Eigener Wille) ---
+void autonomousLoop() {
+    while (appRunning) {
+        // Prüfe alle 10 Sekunden, wie lange der User schon still ist
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+        
+        // Wenn 120 Sekunden (2 Minuten) nichts gesagt wurde...
+        if (globalIdleClock.getElapsedTime().asSeconds() > 120.0f) {
+            
+            // ... und sie nicht gerade schon redet oder zuhört ...
+            if (!thinking && !talking && !listening) {
+                
+                logAion("AION ist langweilig. Sie ergreift das Wort!");
+                
+                // Wir schicken einen geheimen System-Gedanken an das Gehirn!
+                std::string spontanPrompt = 
+                    "[INTERNES EREIGNIS: Der User war jetzt 2 Minuten lang still. "
+                    "Ergreife von dir aus das Wort! Frag ihn spontan, wie sein Tag war, "
+                    "ob du gute Musik für ihn anmachen sollst (YouTube), oder erzähle ihm einen kurzen, "
+                    "spannenden Fun-Fact. Sei natürlich und überrasche ihn.]";
+                
+                // Uhr sofort zurücksetzen, damit sie dich nicht vollspammt
+                globalIdleClock.restart();
+                
+                // Gedanken an Ollama schicken
+                std::thread(callBrain, spontanPrompt).detach();
+            }
         }
     }
 }
@@ -276,6 +312,7 @@ int main() {
     std::thread(startupGreeting).detach();
     std::thread(consoleLoop).detach();
 	std::thread(voiceLoop).detach();
+	std::thread(autonomousLoop).detach();
 
     sf::Clock idleClock, animClock, blinkClock;
     float nextBlinkTime = (float)(rand() % 3 + 2);
