@@ -18,9 +18,9 @@
 using json = nlohmann::json;
 // --- KONFIGURATION (ORIGINAL OPTIK) ---
 namespace Face {
-    const unsigned int W = 640;          // Popup-Breite
-    const unsigned int H = 480;          // Popup-Höhe
-    const float FONT_SIZE = 1.01f;       // Original Matrix-Optik
+    const unsigned int W = 640;
+    const unsigned int H = 480;
+    const float FONT_SIZE = 1.01f;
 }
 // STATUS-FLAGS
 std::atomic<bool> appRunning{true};
@@ -29,32 +29,25 @@ std::atomic<bool> listening{false};
 std::atomic<bool> talking{false};
 std::atomic<bool> isBooting{true};
 std::atomic<bool> resetIdleTimer{true};
-std::atomic<bool> openMicMode{false}; // Standardmäßig aus (PTT)
-// Globale Uhr für AIONs Langeweile
+std::atomic<bool> openMicMode{false};
 sf::Clock globalIdleClock;
-
 // UI STATE
 bool isVisible = true;
 bool isDragging = false;
 sf::Vector2i grabOffset;
-
-// HELPER
 std::string readFile(const std::string& filename) {
     std::ifstream in(filename, std::ios::in | std::ios::binary);
     if (!in) return "";
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
-
 void logAion(const std::string& msg) {
     std::cout << "[AION LOG] " << msg << std::endl;
 }
-
 void callBrain(std::string p) {
     thinking = true;
     logAion("Analysiere: " + p);
 	// 1. Das alte Tagebuch lesen
     std::string erinnerungen = readFile("gedaechtnis.txt");
-
     // 2. Den System-Prompt zusammenbauen (AGENTEN-MODUS)
     std::string systemPrompt =
         "Du bist AION, eine extrem intelligente, lebendige und eigenständige KI-Begleiterin. "
@@ -82,109 +75,72 @@ void callBrain(std::string p) {
         "HIER SIND DEINE BISHERIGEN ERINNERUNGEN AN DEN USER:\n" + 
         erinnerungen;
     std::string fullPrompt = systemPrompt + "\n\nUser: " + p;
-
     // 2. HTTP-REQUEST AN DEINE LOKALE KI (Ollama) VORBEREITEN
     sf::Http http("127.0.0.1", 11434);
     sf::Http::Request request("/api/generate", sf::Http::Request::Method::Post);
-
     // JSON-Payload für Ollama erstellen
     json requestBody;
-    requestBody["model"] = "llama3.2"; // Hier dein lokales Modell eintragen
+    requestBody["model"] = "llama3.2";
     requestBody["prompt"] = fullPrompt;
     requestBody["stream"] = false;
-
     request.setBody(requestBody.dump());
     request.setField("Content-Type", "application/json");
-
     // 3. ANFRAGE SENDEN (Timeout auf 120 Sekunden, falls die KI länger nachdenkt)
     sf::Http::Response response = http.sendRequest(request, sf::seconds(120.f));
-
     if (response.getStatus() == sf::Http::Response::Status::Ok) {
-        // Antwort parsen
         json responseJson = json::parse(response.getBody());
         std::string aiAnswer = responseJson["response"];
-
         // 4. BEFEHLE EXTRAHIEREN UND AUSFÜHREN [CMD: ...]
         size_t cmdStart = aiAnswer.find("[CMD:");
         if (cmdStart != std::string::npos) {
             size_t cmdEnd = aiAnswer.find("]", cmdStart);
             if (cmdEnd != std::string::npos) {
-                // Befehl ausschneiden (Länge von "[CMD:" ist 5)
                 std::string command = aiAnswer.substr(cmdStart + 5, cmdEnd - (cmdStart + 5));
-                
-                // Leerzeichen am Anfang entfernen, falls die KI "[CMD: notepad]" schreibt
                 if (!command.empty() && command[0] == ' ') {
                     command.erase(0, 1);
                 }
-
                 logAion("FUEHRE SYSTEMBEFEHL AUS: " + command);
-                
-                // HIER PASSIERT DIE MAGIE: C++ führt den Befehl auf deinem PC aus!
                 std::system(command.c_str());
-
-                // Wir löschen den [CMD: ...]-Block aus dem Text, 
-                // damit das Gesicht den kryptischen Befehl nicht laut vorliest.
                 aiAnswer.erase(cmdStart, cmdEnd - cmdStart + 1);
             }
         }
-		// GEDÄCHTNIS-FUNKTION: Sucht nach [MERKEN: ...]
         size_t memStart = aiAnswer.find("[MERKEN:");
         if (memStart != std::string::npos) {
             size_t memEnd = aiAnswer.find("]", memStart);
             if (memEnd != std::string::npos) {
-                // Erinnerung ausschneiden
                 std::string memoryText = aiAnswer.substr(memStart + 8, memEnd - (memStart + 8));
-                
                 logAion("AION LERNT DAZU: " + memoryText);
-                
-                // Dauerhaft in die Textdatei speichern (anhängen)
                 std::ofstream memFile("gedaechtnis.txt", std::ios::app);
                 memFile << "- " << memoryText << "\n";
                 memFile.close();
-
-                // Den [MERKEN: ...]-Block aus dem Text löschen, damit sie es nicht laut vorliest
                 aiAnswer.erase(memStart, memEnd - memStart + 1);
             }
         }
-
-        // 5. ANTWORT FÜR DAS GESICHT SPEICHERN
         std::ofstream out("ai_answer.txt", std::ios::trunc);
         out << aiAnswer;
         out.close();
-        
-        // 6. WEIBLICHE STIMME GENERIEREN (Piper) mit "Egoshow"-Schutz
         if (!aiAnswer.empty()) {
-            // Falls sie gerade noch redet, warten wir kurz, bis sie fertig ist
             while(talking) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
-
-            talking = true; // Jetzt besetzen wir das Mikrofon
-            
-            // Piper-Befehl ausführen
+            talking = true;
             std::string voiceCmd = "piper.exe --model voice.onnx --output_file response.wav < ai_answer.txt";
             std::system(voiceCmd.c_str());
-        
-            // Abspielen (PlaySync wartet, bis die Datei zu Ende ist)
             std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
-            
-            talking = false; // Mikrofon wieder frei
+            talking = false;
         }
     } else {
         logAion("Fehler bei der Verbindung zum KI-Kern. Status: " + std::to_string(static_cast<int>(response.getStatus())));
     }
-
     thinking = false;
 }
 // --- NEU: EIGENER THREAD FÜR DIE OHREN ---
 void voiceLoop() {
     sf::SoundBufferRecorder recorder;
     bool isRecording = false;
-
     while (appRunning) {
         // Logik: Entweder Taste gedrückt ODER Open Mic ist an (aber nur wenn sie nicht gerade selbst redet!)
         bool trigger = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl) || (openMicMode && !talking && !thinking);
-
         if (trigger) {
             if (!isRecording && !thinking && !talking) {
                 isRecording = true;
@@ -196,19 +152,15 @@ void voiceLoop() {
             isRecording = false;
             recorder.stop();
             const sf::SoundBuffer& buffer = recorder.getBuffer();
-            
-            // Bei Open Mic nehmen wir kürzere Pausen in Kauf
             float minDuration = openMicMode ? 0.8f : 0.5f;
-
             if (buffer.getDuration().asSeconds() > minDuration) {
                 logAion("Verarbeite...");
                 (void)buffer.saveToFile("input.wav");
                 std::system("whisper-cli.exe -m ggml-base.bin -f input.wav --language de --output-txt");
-
                 std::ifstream ifs("input.wav.txt");
                 std::string voiceText;
                 if (std::getline(ifs, voiceText)) {
-                    if (voiceText.length() > 3) { // Rauschen ignorieren
+                    if (voiceText.length() > 3) {
                         logAion("Gehört: " + voiceText);
                         globalIdleClock.restart();
                         std::thread(callBrain, voiceText).detach();
@@ -217,8 +169,6 @@ void voiceLoop() {
                 ifs.close();
             }
         }
-        
-        // Im Open Mic Modus kleine Pause, damit der Prozessor nicht glüht
         std::this_thread::sleep_for(std::chrono::milliseconds(openMicMode ? 200 : 10));
     }
 }
@@ -229,7 +179,6 @@ void consoleLoop() {
         std::cout << "\n>> CMD: ";
         std::getline(std::cin, input);
         if (input == "exit") { appRunning = false; break; }
-        
         if (!input.empty()) {
             if (thinking || talking) {
                 logAion("SYSTEM-WARNUNG: Status zurueckgesetzt!");
@@ -249,27 +198,15 @@ void consoleLoop() {
 }
 // --- NEU: AIONS UNTERBEWUSSTSEIN (Eigener Wille - Zufalls-Modus) ---
 void autonomousLoop() {
-    // Zeitrahmen festlegen: 3 Minuten (180s) bis 60 Minuten (3600s)
     int minSeconds = 180;
     int maxSeconds = 3600;
-    
-    // Erste zufällige Zeit generieren
     float nextTriggerSeconds = (float)(rand() % (maxSeconds - minSeconds + 1) + minSeconds);
-    
     logAion("Unterbewusstsein aktiv. Nächster Impuls in ca. " + std::to_string((int)nextTriggerSeconds / 60) + " Minuten.");
-
     while (appRunning) {
-        // Prüfe alle 10 Sekunden
         std::this_thread::sleep_for(std::chrono::seconds(10));
-        
-        // Wenn die zufällige Zeit abgelaufen ist...
         if (globalIdleClock.getElapsedTime().asSeconds() > nextTriggerSeconds) {
-            
-            // ... und sie Zeit hat ...
             if (!thinking && !talking && !listening) {
-                
                 logAion("AION hat einen spontanen Einfall!");
-                
                 std::string spontanPrompt = 
                     "[INTERNES EREIGNIS: Dir ist gerade ein spontaner Gedanke gekommen, weil es so still war. "
                     "Tue jetzt etwas Völlig Unerwartetes! "
@@ -277,84 +214,61 @@ void autonomousLoop() {
                     "ODER öffne ihm ein cooles Video auf YouTube, "
                     "ODER stell ihm eine extrem philosophische oder lustige Frage. "
                     "Sei kreativ, sei charmant und überrasche ihn!]";
-                
-                // Uhr sofort zurücksetzen
                 globalIdleClock.restart();
-                
-                // NEUE zufällige Wartezeit für das nächste Mal berechnen!
                 nextTriggerSeconds = (float)(rand() % (maxSeconds - minSeconds + 1) + minSeconds);
                 logAion("Nächster spontaner Einfall in: " + std::to_string((int)nextTriggerSeconds / 60) + " Minuten.");
-                
-                // Gedanken ans Gehirn schicken
                 std::thread(callBrain, spontanPrompt).detach();
             }
         }
     }
 }
-
 void startupGreeting() {
     isBooting = true;
     logAion("System Booting...");
     std::this_thread::sleep_for(std::chrono::milliseconds(1500));
     isBooting = false;
 }
-
 void activateVoice() {
     if (listening || thinking || talking || isBooting) return;
     listening = true;
-    // Nutze internen Buffer für Echo-Schutz
     std::string spokenText = readFile("aion_internal_ears.txt"); 
     listening = false;
     if (!spokenText.empty() && spokenText.length() > 1) {
-        // Buffer leeren
         std::ofstream ofs("aion_internal_ears.txt", std::ios::trunc); ofs.close();
         logAion("Voice-Input: " + spokenText);
         std::thread(callBrain, spokenText).detach();
         resetIdleTimer = true;
     }
 }
-
 int main() {
-	// Mische den C++ Zufallsgenerator anhand der Windows-Uhrzeit!
     srand((unsigned)time(NULL));
-    // --- PARTNER 1: DIE KONSOLE (Der Bräutigam) ---
     HWND hwndConsole = GetConsoleWindow();
     if (hwndConsole) {
         SetWindowTextA(hwndConsole, "AION NEXUS & BRAIN");
         MoveWindow(hwndConsole, 600, 50, 640, 480, TRUE);
     }
-
-    // --- PARTNER 2: DAS GESICHT (Die Braut) ---
     sf::RenderWindow window(sf::VideoMode({Face::W, Face::H}), "AION FACE INTERFACE", sf::Style::None); 
     window.setFramerateLimit(60);
-
-    // Handle holen und Transparenz-Schleier anlegen
     HWND hwndFace = (HWND)window.getNativeHandle();
     SetWindowLong(hwndFace, GWL_EXSTYLE, GetWindowLong(hwndFace, GWL_EXSTYLE) | WS_EX_LAYERED);
     SetLayeredWindowAttributes(hwndFace, RGB(0, 0, 0), 0, LWA_COLORKEY);
-
     SetConsoleOutputCP(65001);
-	SetConsoleCP(65001);	
-	
+	SetConsoleCP(65001);
     sf::Font font;
     if (!font.openFromFile("font.ttf")) {
         if (!font.openFromFile("C:/Windows/Fonts/consola.ttf")) return -1;
     }
-
     sf::Image faceMap;
     if (!faceMap.loadFromFile("face.png")) {
         faceMap.resize(sf::Vector2u(Face::W, Face::H), sf::Color::Black);
     }
     sf::Vector2u imgSize = faceMap.getSize();
-
     const int COLS = static_cast<int>(Face::W / Face::FONT_SIZE);
     const int ROWS = static_cast<int>(Face::H / Face::FONT_SIZE);
-    const std::string symbols = ".o00´"; 
-
+    const std::string symbols = ".o00´";
     struct Drop { float y; float speed; };
     std::vector<std::vector<Drop>> columnDrops(COLS);
     std::vector<std::vector<char>> gridChars(COLS, std::vector<char>(ROWS));
-
     for(int x = 0; x < COLS; x++) {
         for(int i = 0; i < 30; i++) {
             columnDrops[x].push_back({
@@ -366,35 +280,22 @@ int main() {
             gridChars[x][y] = symbols[rand() % symbols.size()];
         }
     }
-
     sf::Text text(font);
-    text.setCharacterSize(static_cast<unsigned int>(Face::FONT_SIZE)); 
-
+    text.setCharacterSize(static_cast<unsigned int>(Face::FONT_SIZE));
     std::thread(startupGreeting).detach();
     std::thread(consoleLoop).detach();
 	std::thread(voiceLoop).detach();
 	std::thread(autonomousLoop).detach();
-
     sf::Clock idleClock, animClock, blinkClock;
     float nextBlinkTime = (float)(rand() % 3 + 2);
     bool isBlinking = false;
-	
-	
-
-    // --- HAUPTSCHLEIFE ---
     // --- HAUPTSCHLEIFE ---
     while (window.isOpen() && appRunning) {
-        
-        // 1. NUR EINE EVENT-SCHLEIFE! (Alle Events hier abhandeln)
         while (const std::optional event = window.pollEvent()) {
             if (event->is<sf::Event::Closed>()) { appRunning = false; window.close(); }
-            
-            // Beenden mit ESC
             if (const auto* keyPressed = event->getIf<sf::Event::KeyPressed>()) {
                 if (keyPressed->code == sf::Keyboard::Key::Escape) { appRunning = false; window.close(); }
             }
-
-            // Dragging-Start
             if (const auto* mouseBtn = event->getIf<sf::Event::MouseButtonPressed>()) {
                 if (mouseBtn->button == sf::Mouse::Button::Left) {
                     isDragging = true; 
@@ -403,63 +304,42 @@ int main() {
             }
             if (event->is<sf::Event::MouseButtonReleased>()) isDragging = false;
         }
-
-        // 2. DIE LOGIK DER "EHE"
         if (hwndConsole) {
             if (IsIconic(hwndConsole)) {
                 if (isVisible) { window.setVisible(false); isVisible = false; }
             } else {
                 if (!isVisible) { window.setVisible(true); isVisible = true; }
-
                 if (isDragging) {
-                    // FALL A: Du ziehst am Gesicht -> Qanny folgt
                     sf::Vector2i mousePos = sf::Mouse::getPosition();
                     sf::Vector2i newPos = mousePos - grabOffset;
                     window.setPosition(newPos);
-                    
-                    // Konsole so verschieben, dass das Gesicht oben rechts bleibt
-                    // 640 ist die Konsolenbreite, 320 die Gesichtsbreite
                     MoveWindow(hwndConsole, newPos.x - 0, newPos.y - 0, 640, 480, TRUE);
                 } else {
-                    // FALL B: Du ziehst an Qanny (CMD) -> Das Gesicht folgt (Magnet)
                     RECT rect;
                     GetWindowRect(hwndConsole, &rect);
-
-                    // Berechnung für die Ecke oben rechts
-                    int cornerX = rect.right - Face::W - 0; // 15px vom rechten Rand
-                    int cornerY = rect.top + 0;             // 35px unter der Titelleiste
-
-                    // Gesicht an diese Position zwingen
+                    int cornerX = rect.right - Face::W - 0;
+                    int cornerY = rect.top + 0;
                     SetWindowPos(hwndFace, HWND_TOPMOST, cornerX, cornerY, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
                 }
             }
         }
-
-        // 3. GRAFIK-UPDATE (Rest deines Codes...)
-
-    // ... (restlicher Grafik-Code)
-
         while (const std::optional event = window.pollEvent()) {
             if (event->is<sf::Event::Closed>()) { appRunning = false; window.close(); }
             if (const auto* keyPressed = event->getIf<sf::Event::KeyPressed>()) {
                 if (keyPressed->code == sf::Keyboard::Key::Escape) { appRunning = false; window.close(); }
             }
         }
-
         if (listening || thinking || talking) resetIdleTimer = true;
         if (resetIdleTimer) {
             idleClock.restart(); resetIdleTimer = false;
             if (!isVisible) { window.setVisible(true); isVisible = true; }
         }
-        
         if (isVisible && !isBooting && !thinking && !listening && !talking) {
             std::thread(activateVoice).detach();
         }
-
         if (isVisible) {
             window.clear(sf::Color::Black);
             float time = animClock.getElapsedTime().asSeconds();
-
             float blinkTimeElapsed = blinkClock.getElapsedTime().asSeconds();
             if (blinkTimeElapsed > nextBlinkTime) {
                 isBlinking = true;
@@ -467,33 +347,24 @@ int main() {
                     isBlinking = false; blinkClock.restart(); nextBlinkTime = (float)(rand() % 4 + 2);
                 }
             }
-
             sf::Color stateBaseColor;
             if (listening) stateBaseColor = sf::Color(255, 50, 50);       
             else if (thinking) stateBaseColor = sf::Color(50, 150, 255);
 			else if (openMicMode) stateBaseColor = sf::Color(200, 255, 0);
-            else stateBaseColor = sf::Color(0, 255, 100);                
-
+            else stateBaseColor = sf::Color(0, 255, 100);
             for (int x = 0; x < COLS; x++) {
                 for (auto& d : columnDrops[x]) {
                     d.y += d.speed * 0.65f;
                     if (d.y > Face::H + 5) d.y = -5;
                 }
-
                 for (int y = 0; y < ROWS; y++) {
                     float pX = x * Face::FONT_SIZE;
-                    float pY = y * Face::FONT_SIZE; // <--- Prüfe, ob hier das ; war!
-                    
-                    // Korrekte Berechnung mit dem Face-Namespace
+                    float pY = y * Face::FONT_SIZE;
                     unsigned int mX = static_cast<unsigned int>((pX / Face::W) * imgSize.x);
                     unsigned int mY = static_cast<unsigned int>((pY / Face::H) * imgSize.y);
-                    
                     if (mX >= imgSize.x || mY >= imgSize.y) continue;
-
-                    // SFML 3 Fix: Benutze sf::Vector2u(...) statt nur {mX, mY}
                     sf::Color pixel = faceMap.getPixel(sf::Vector2u(mX, mY));
                     int brightness = (pixel.r + pixel.g + pixel.b) / 4;
-
                     if (brightness > 40 && brightness < 60) {
                         text.setString(std::string(1, gridChars[x][y]));
                         text.setPosition({pX, pY});
@@ -501,32 +372,23 @@ int main() {
                         window.draw(text);
                         if (brightness < 50) continue; 
                     }
-                    
                     if (brightness < 80) continue;
-
                     float baseInt = 0.77f;
                     sf::Color finalCol = stateBaseColor;
                     float dGlow = 0.11f;
-
                     for (const auto& d : columnDrops[x]) {
                         float dist = d.y - pY;
                         if (dist > 0 && dist < 80) dGlow = std::max(dGlow, (1.0f - (dist / 80.0f)));
                     }
-
                     float highlight = baseInt + dGlow;
                     finalCol.r = static_cast<uint8_t>(std::min(255, (int)(finalCol.r * highlight)));
                     finalCol.g = static_cast<uint8_t>(std::min(255, (int)(finalCol.g * highlight)));
                     finalCol.b = static_cast<uint8_t>(std::min(255, (int)(finalCol.b * highlight)));
-
                     if (dGlow > 0.9f) finalCol = sf::Color::White;
-
                     bool isEyeArea = (y > ROWS * 0.35 && y < ROWS * 0.45) && 
                                      ((x > COLS * 0.25 && x < COLS * 0.40) || (x > COLS * 0.60 && x < COLS * 0.75));
-
                     if (isBlinking && isEyeArea) continue;
-
                     float wave = std::sin(time * 5.0f + (x * 0.32f)) * std::cos(time * 6.0f + (y * 0.2f));
-
                     if (wave > 1.32f) {
                          float intensity = 10.6f + (wave * 21.11f); 
                          finalCol.r = static_cast<uint8_t>(std::min(255, (int)(finalCol.r + (255 * intensity))));
@@ -537,7 +399,6 @@ int main() {
                         finalCol.g = static_cast<uint8_t>(finalCol.g * 0.5f);
                         finalCol.b = static_cast<uint8_t>(finalCol.b * 0.6f);
                     }
-
                     text.setString(std::string(1, gridChars[x][y]));
                     text.setPosition({pX, pY});
                     text.setFillColor(finalCol);
