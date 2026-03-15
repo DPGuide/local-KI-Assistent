@@ -18,6 +18,8 @@
 + whisper.dll
 + whisper-cli.exe
 + piper.exe
++ espeak-ng.dll
++ piper_phonemize.dll
 + ggml-base.dll
 + ggml-base.bin
 
