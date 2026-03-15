@@ -15,3 +15,9 @@
 + ggml-base.bin
 
 ***some model, i use :ollama llama3.2***
+
+***if you want a matirx face for the KI: face.png***
+
+***its a part for the CMD window. alway move with CMD window***
+
+***you cant type or speack with "hold left STRG"***
