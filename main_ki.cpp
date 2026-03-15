@@ -29,6 +29,7 @@ std::atomic<bool> listening{false};
 std::atomic<bool> talking{false};
 std::atomic<bool> isBooting{true};
 std::atomic<bool> resetIdleTimer{true};
+std::atomic<bool> openMicMode{false}; // Standardmäßig aus (PTT)
 // Globale Uhr für AIONs Langeweile
 sf::Clock globalIdleClock;
 
@@ -64,6 +65,7 @@ void callBrain(std::string p) {
         "- YouTube oder Websuchen: Nutze den 'start' Befehl mit der URL! Wenn der User ein Lied auf YouTube hoeren will, nutze die YouTube-Suche. "
         "Beispiel fuer 'Musik Chillout auf YouTube': [CMD: start https://www.youtube.com/results?search_query=chillout]\n"
         "Beispiel fuer 'Oeffne Google': [CMD: start https://www.google.de]\n"
+		"Wenn der User 'aktiviere Open Mic' sagt, antworte mit [CMD: mic]"
 		"2. Merken (Langzeitgedaechtnis): [MERKEN: Der User mag chillout]\n"
 		"3. NEU - EIGENE DATEIEN ERSTELLEN: Du kannst Code, Gedichte oder Notizen direkt auf den PC schreiben! "
 		"Nutze dafür den echo-Befehl. Beispiel: [CMD: echo print(\"Hallo Welt\") > script.py] oder [CMD: echo Hallo User > notiz.txt]\n"
@@ -176,42 +178,44 @@ void voiceLoop() {
     bool isRecording = false;
 
     while (appRunning) {
-        // STRG LINKS als Walkie-Talkie Taste
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl)) {
+        // Logik: Entweder Taste gedrückt ODER Open Mic ist an (aber nur wenn sie nicht gerade selbst redet!)
+        bool trigger = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl) || (openMicMode && !talking && !thinking);
+
+        if (trigger) {
             if (!isRecording && !thinking && !talking) {
                 isRecording = true;
-                logAion("AION hoert zu... (STRG links gedrueckt halten!)");
+                logAion(openMicMode ? "Open Mic aktiv: Ich höre..." : "PTT aktiv: Ich höre...");
                 (void)recorder.start();
             }
         } 
         else if (isRecording) {
             isRecording = false;
             recorder.stop();
-            
             const sf::SoundBuffer& buffer = recorder.getBuffer();
             
-            // Sicherheitscheck: Wurde die Taste lange genug gehalten? (> 0.5 Sekunden)
-            if (buffer.getDuration().asSeconds() > 0.5f) {
-                logAion("Verarbeite Sprache...");
-                (void)buffer.saveToFile("input.wav");
+            // Bei Open Mic nehmen wir kürzere Pausen in Kauf
+            float minDuration = openMicMode ? 0.8f : 0.5f;
 
+            if (buffer.getDuration().asSeconds() > minDuration) {
+                logAion("Verarbeite...");
+                (void)buffer.saveToFile("input.wav");
                 std::system("whisper-cli.exe -m ggml-base.bin -f input.wav --language de --output-txt");
 
                 std::ifstream ifs("input.wav.txt");
                 std::string voiceText;
                 if (std::getline(ifs, voiceText)) {
-                    if (voiceText.length() > 2) {
-                        logAion("Gehoert: " + voiceText);
-						globalIdleClock.restart();
+                    if (voiceText.length() > 3) { // Rauschen ignorieren
+                        logAion("Gehört: " + voiceText);
+                        globalIdleClock.restart();
                         std::thread(callBrain, voiceText).detach();
                     }
                 }
                 ifs.close();
-            } else {
-                logAion("Aufnahme abgebrochen: Taste wurde zu kurz gedrueckt!");
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        
+        // Im Open Mic Modus kleine Pause, damit der Prozessor nicht glüht
+        std::this_thread::sleep_for(std::chrono::milliseconds(openMicMode ? 200 : 10));
     }
 }
 // --- ZURUECK ZUM URSPRUNG: DIE KONSOLE KANN WIEDER TIPPEN ---
@@ -228,6 +232,11 @@ void consoleLoop() {
                 thinking = false;
                 talking = false;
             }
+			if (input == "mic") {
+            openMicMode = !openMicMode;
+            logAion(openMicMode ? "OPEN MIC AKTIVIERT!" : "PUSH-TO-TALK AKTIVIERT!");
+            continue;
+			}
             resetIdleTimer = true;
 			globalIdleClock.restart();
             std::thread(callBrain, input).detach();
@@ -457,7 +466,8 @@ int main() {
 
             sf::Color stateBaseColor;
             if (listening) stateBaseColor = sf::Color(255, 50, 50);       
-            else if (thinking) stateBaseColor = sf::Color(50, 150, 255); 
+            else if (thinking) stateBaseColor = sf::Color(50, 150, 255);
+			else if (openMicMode) stateBaseColor = sf::Color(200, 255, 0);
             else stateBaseColor = sf::Color(0, 255, 100);                
 
             for (int x = 0; x < COLS; x++) {
