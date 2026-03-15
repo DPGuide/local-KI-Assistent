@@ -13,4 +13,5 @@
 + piper.exe
 + ggml-base.dll
 + ggml-base.bin
-+ 
+
+***some model, i use :ollama llama3.2***
