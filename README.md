@@ -32,5 +32,6 @@
 ***yes full control, the KI can open programms etc. but delete is deisabled that you must change in the code or add some owen things you like***
 
 ***CMD command to local server "ollama serve"***
+***to test via CMD and manifest "ollama run llama3.2 "Hallo, bist du da?"***
 
 ***HF & GL***
