@@ -11,3 +11,6 @@
 + whisper.dll
 + whisper-cli.exe
 + piper.exe
++ ggml-base.dll
++ ggml-base.bin
++ 
