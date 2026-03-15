@@ -152,19 +152,23 @@ void callBrain(std::string p) {
         out << aiAnswer;
         out.close();
         
-        // 6. WEIBLICHE STIMME GENERIEREN (Piper)
+        // 6. WEIBLICHE STIMME GENERIEREN (Piper) mit "Egoshow"-Schutz
         if (!aiAnswer.empty()) {
-            talking = true;
+            // Falls sie gerade noch redet, warten wir kurz, bis sie fertig ist
+            while(talking) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+
+            talking = true; // Jetzt besetzen wir das Mikrofon
             
-            // CMD-Syntax: Wir schieben die Textdatei mit '<' direkt in Piper
-            // ACHTUNG: Hier steht jetzt dein richtiger Modell-Name "voice.onnx"!
+            // Piper-Befehl ausführen
             std::string voiceCmd = "piper.exe --model voice.onnx --output_file response.wav < ai_answer.txt";
             std::system(voiceCmd.c_str());
         
-            // Die erzeugte Datei abspielen
+            // Abspielen (PlaySync wartet, bis die Datei zu Ende ist)
             std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
             
-            talking = false;
+            talking = false; // Mikrofon wieder frei
         }
     } else {
         logAion("Fehler bei der Verbindung zum KI-Kern. Status: " + std::to_string(static_cast<int>(response.getStatus())));
