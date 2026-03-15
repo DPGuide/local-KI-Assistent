@@ -22,6 +22,7 @@
 + piper_phonemize.dll
 + ggml-base.dll
 + ggml-base.bin
++ full folder from piper "espeak-ng-data"
 
 ***some model, i use :ollama llama3.2***
 
