@@ -156,7 +156,7 @@ void voiceLoop() {
             if (buffer.getDuration().asSeconds() > minDuration) {
                 logAion("Verarbeite...");
                 (void)buffer.saveToFile("input.wav");
-                std::system("whisper-cli.exe -m ggml-base.bin -f input.wav --language de --output-txt");
+                std::system("whisper-cli.exe -m ggml-base.bin -f input.wav --language auto --output-txt");
                 std::ifstream ifs("input.wav.txt");
                 std::string voiceText;
                 if (std::getline(ifs, voiceText)) {
