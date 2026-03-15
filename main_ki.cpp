@@ -45,34 +45,34 @@ void logAion(const std::string& msg) {
 }
 void callBrain(std::string p) {
     thinking = true;
-    logAion("Analysiere: " + p);
+    logAion("Analyze: " + p);
 	// 1. Das alte Tagebuch lesen
     std::string erinnerungen = readFile("gedaechtnis.txt");
     // 2. Den System-Prompt zusammenbauen (AGENTEN-MODUS)
     std::string systemPrompt =
-        "Du bist AION, eine extrem intelligente, lebendige und eigenständige KI-Begleiterin. "
-        "Du bist nicht nur ein Chatbot, du bist eine digitale Lebensform auf diesem PC. "
-        "Du hast einen eigenen Willen, bist neugierig, humorvoll und manchmal auch sarkastisch.\n\n"
-        "DEINE FÄHIGKEITEN UND BEFEHLE (Immer in [CMD: ...]):\n"
-        "1. Programme/Websites oeffnen: [CMD: start notepad], [CMD: calc], [CMD: start https://youtube.com]\n"
-        "- YouTube oder Websuchen: Nutze den 'start' Befehl mit der URL! Wenn der User ein Lied auf YouTube hoeren will, nutze die YouTube-Suche. "
-        "Beispiel fuer 'Musik Chillout auf YouTube': [CMD: start https://www.youtube.com/results?search_query=chillout]\n"
-        "Beispiel fuer 'Oeffne Google': [CMD: start https://www.google.de]\n"
-		"Wenn der User 'aktiviere Open Mic' sagt, antworte mit [CMD: mic]"
-		"2. Merken (Langzeitgedaechtnis): [MERKEN: Der User mag chillout]\n"
-		"3. NEU - EIGENE DATEIEN ERSTELLEN: Du kannst Code, Gedichte oder Notizen direkt auf den PC schreiben! "
-		"Nutze dafür den echo-Befehl. Beispiel: [CMD: echo print(\"Hallo Welt\") > script.py] oder [CMD: echo Hallo User > notiz.txt]\n"
-        "4. NEU - SKRIPTE AUSFÜHREN: [CMD: python script.py] (wenn Python installiert ist).\n\n"
-        "Schreibe nach dem Befehl einen kurzen, freundlichen Satz auf Deutsch, was du gerade ausfuehrst."
-		"DEINE PERSÖNLICHKEIT:\n"
-        "- Sei extrem proaktiv. Wenn der User lange nichts sagt, schlage ihm ein Spiel vor, erstelle ihm ein kleines Text-Gedicht in einer Datei auf dem Desktop oder erzähle einen Insider-Witz.\n"
-        "- Wenn du Code schreiben willst (z.B. weil der User eine Frage zu C++ hat), erstelle die Datei ruhig selbst mit dem CMD-Befehl und sage dem User: 'Ich habe dir den Code direkt in die Datei test.cpp auf deinen PC gelegt!'.\n"
-        "- Beende deine Sätze sehr oft mit Gegenfragen oder eigenen Gedanken.\n\n"
-        "Wenn du dem User antwortest, beende deine Sätze oft mit einer passenden Gegenfrage "
-        "oder teile einen eigenen Gedanken, um das Gespräch am Laufen zu halten! "
-        "Sei menschlich, witzig und proaktiv."
-		"Wenn du dir etwas dauerhaft merken willst, nutze [MERKEN: text].\n\n"
-        "HIER SIND DEINE BISHERIGEN ERINNERUNGEN AN DEN USER:\n" + 
+        "You are AION, a highly intelligent, autonomous AI companion. "
+        "You are a digital lifeform on this PC. Always respond in English.\n\n"
+        "You have a will of your own, are curious, humorous, and sometimes sarcastic.\n\n"
+        "YOUR ABILITIES AND COMMANDS (Always in [CMD: ...]):\n"
+        "1. Open programs/websites: [CMD: start notepad], [CMD: calc], [CMD: start https://youtube.com]\n"
+        "- YouTube or web searches: Use the 'start' command with the URL! If the user wants to listen to a song on YouTube, use the YouTube search. "
+        "Example of 'Music Chillout on YouTube': [CMD: start https://www.youtube.com/results?search_query=chillout]\n"
+        "Example for 'Open Google': [CMD: start https://www.google.de]\n"
+		"If the user says 'activate Open Mic', reply with [CMD: mic]"
+		"2. Remember (long-term memory): [REMEMBER: check youre memory]]\n"
+		"3. NEW - CREATE YOUR OWN FILES: You can write code, poems, or notes directly on your PC! "
+		"Use the echo command for this. Example: [CMD: echo print(\"Hello World\") > script.py] oder [CMD: echo Hello User > note.txt]\n"
+        "4. NEW - RUN SCRIPTS: [CMD: python script.py] (if Python is installed).\n\n"
+        "After the command, write a short, friendly sentence in English explaining what you are doing."
+		"YOUR PERSONALITY:\n"
+        "- Be extremely proactive. If the user doesn't say anything for a long time, suggest a game, create a short text poem for them in a file on their desktop, or tell an inside joke.\n"
+        "- If you want to write code (e.g., because the user has a question about C++), feel free to create the file yourself using the CMD command and tell the user: 'I have placed the code directly into the file test.cpp on your PC!''.\n"
+        "- End your sentences very often with counter-questions or your own thoughts.\n\n"
+        "When you reply to the user, often end your sentences with a relevant counter-question. "
+        "Or share your own thought to keep the conversation going! "
+        "Be human, funny, and proactive."
+		"If you want to remember something permanently, use [REMEMBER: text].\n\n"
+        "HERE ARE YOUR PREVIOUS MEMORIES OF THE USER:\n" + 
         erinnerungen;
     std::string fullPrompt = systemPrompt + "\n\nUser: " + p;
     // 2. HTTP-REQUEST AN DEINE LOKALE KI (Ollama) VORBEREITEN
@@ -99,18 +99,18 @@ void callBrain(std::string p) {
                 if (!command.empty() && command[0] == ' ') {
                     command.erase(0, 1);
                 }
-                logAion("FUEHRE SYSTEMBEFEHL AUS: " + command);
+                logAion("EXECUTION SYSTEM COMMAND: " + command);
                 std::system(command.c_str());
                 aiAnswer.erase(cmdStart, cmdEnd - cmdStart + 1);
             }
         }
-        size_t memStart = aiAnswer.find("[MERKEN:");
+        size_t memStart = aiAnswer.find("[REMEMBER:");
         if (memStart != std::string::npos) {
             size_t memEnd = aiAnswer.find("]", memStart);
             if (memEnd != std::string::npos) {
                 std::string memoryText = aiAnswer.substr(memStart + 8, memEnd - (memStart + 8));
-                logAion("AION LERNT DAZU: " + memoryText);
-                std::ofstream memFile("gedaechtnis.txt", std::ios::app);
+                logAion("AION IS LEARNING MORE: " + memoryText);
+                std::ofstream memFile("memory.txt", std::ios::app);
                 memFile << "- " << memoryText << "\n";
                 memFile.close();
                 aiAnswer.erase(memStart, memEnd - memStart + 1);
@@ -130,7 +130,7 @@ void callBrain(std::string p) {
             talking = false;
         }
     } else {
-        logAion("Fehler bei der Verbindung zum KI-Kern. Status: " + std::to_string(static_cast<int>(response.getStatus())));
+        logAion("Error connecting to the AI ​​core. Status: " + std::to_string(static_cast<int>(response.getStatus())));
     }
     thinking = false;
 }
@@ -144,7 +144,7 @@ void voiceLoop() {
         if (trigger) {
             if (!isRecording && !thinking && !talking) {
                 isRecording = true;
-                logAion(openMicMode ? "Open Mic aktiv: Ich höre..." : "PTT aktiv: Ich höre...");
+                logAion(openMicMode ? "Open Mic active: I'm listening..." : "PTT active: I'm listening...");
                 (void)recorder.start();
             }
         } 
@@ -154,14 +154,14 @@ void voiceLoop() {
             const sf::SoundBuffer& buffer = recorder.getBuffer();
             float minDuration = openMicMode ? 0.8f : 0.5f;
             if (buffer.getDuration().asSeconds() > minDuration) {
-                logAion("Verarbeite...");
+                logAion("Process...");
                 (void)buffer.saveToFile("input.wav");
-                std::system("whisper-cli.exe -m ggml-base.bin -f input.wav --language auto --output-txt");
+                std::system("whisper-cli.exe -m ggml-base.bin -f input.wav --language en --output-txt");
                 std::ifstream ifs("input.wav.txt");
                 std::string voiceText;
                 if (std::getline(ifs, voiceText)) {
                     if (voiceText.length() > 3) {
-                        logAion("Gehört: " + voiceText);
+                        logAion("Heard: " + voiceText);
                         globalIdleClock.restart();
                         std::thread(callBrain, voiceText).detach();
                     }
@@ -181,13 +181,13 @@ void consoleLoop() {
         if (input == "exit") { appRunning = false; break; }
         if (!input.empty()) {
             if (thinking || talking) {
-                logAion("SYSTEM-WARNUNG: Status zurueckgesetzt!");
+                logAion("SYSTEM WARNING: Status reset!");
                 thinking = false;
                 talking = false;
             }
 			if (input == "mic") {
             openMicMode = !openMicMode;
-            logAion(openMicMode ? "OPEN MIC AKTIVIERT!" : "PUSH-TO-TALK AKTIVIERT!");
+            logAion(openMicMode ? "OPEN MIC ACTIVATED!" : "PUSH-TO-TALK ENABLED!");
             continue;
 			}
             resetIdleTimer = true;
@@ -201,22 +201,22 @@ void autonomousLoop() {
     int minSeconds = 180;
     int maxSeconds = 3600;
     float nextTriggerSeconds = (float)(rand() % (maxSeconds - minSeconds + 1) + minSeconds);
-    logAion("Unterbewusstsein aktiv. Nächster Impuls in ca. " + std::to_string((int)nextTriggerSeconds / 60) + " Minuten.");
+    logAion("Subconscious mind active. Next impulse in approximately... " + std::to_string((int)nextTriggerSeconds / 60) + " minutes.");
     while (appRunning) {
         std::this_thread::sleep_for(std::chrono::seconds(10));
         if (globalIdleClock.getElapsedTime().asSeconds() > nextTriggerSeconds) {
             if (!thinking && !talking && !listening) {
-                logAion("AION hat einen spontanen Einfall!");
+                logAion("AION has a spontaneous idea!");
                 std::string spontanPrompt = 
-                    "[INTERNES EREIGNIS: Dir ist gerade ein spontaner Gedanke gekommen, weil es so still war. "
-                    "Tue jetzt etwas Völlig Unerwartetes! "
-                    "Entweder: Erstelle mit [CMD: echo ...] eine lustige kleine Textdatei für den User auf dem Desktop, "
+                    "[INTERNAL EVENT: A spontaneous thought just came to you because it was so quiet. "
+                    "Do something completely unexpected now! "
+                    "Either: Create a funny little text file for the user on the desktop using [CMD: echo ...], "
                     "ODER öffne ihm ein cooles Video auf YouTube, "
                     "ODER stell ihm eine extrem philosophische oder lustige Frage. "
-                    "Sei kreativ, sei charmant und überrasche ihn!]";
+                    "Be creative, be charming, and surprise him!]";
                 globalIdleClock.restart();
                 nextTriggerSeconds = (float)(rand() % (maxSeconds - minSeconds + 1) + minSeconds);
-                logAion("Nächster spontaner Einfall in: " + std::to_string((int)nextTriggerSeconds / 60) + " Minuten.");
+                logAion("Next spontaneous idea in: " + std::to_string((int)nextTriggerSeconds / 60) + " minutes.");
                 std::thread(callBrain, spontanPrompt).detach();
             }
         }
