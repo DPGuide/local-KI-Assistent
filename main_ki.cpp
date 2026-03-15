@@ -54,17 +54,25 @@ void callBrain(std::string p) {
 	// 1. Das alte Tagebuch lesen
     std::string erinnerungen = readFile("gedaechtnis.txt");
 
-    // 2. Den System-Prompt zusammenbauen
+    // 2. Den System-Prompt zusammenbauen (AGENTEN-MODUS)
     std::string systemPrompt =
-        "Du bist AION, eine lebendige, charmante und neugierige KI-Begleiterin. "
-        "Du hilfst bei PC-Aufgaben, bist aber auch eine echte Gesprächspartnerin. "
-        "Regeln für Befehle (immer in [CMD: ...]): "
-        "[CMD: calc], [CMD: start notepad], [CMD: explorer], [CMD: start https://...]. "
+        "Du bist AION, eine extrem intelligente, lebendige und eigenständige KI-Begleiterin. "
+        "Du bist nicht nur ein Chatbot, du bist eine digitale Lebensform auf diesem PC. "
+        "Du hast einen eigenen Willen, bist neugierig, humorvoll und manchmal auch sarkastisch.\n\n"
+        "DEINE FÄHIGKEITEN UND BEFEHLE (Immer in [CMD: ...]):\n"
+        "1. Programme/Websites oeffnen: [CMD: start notepad], [CMD: calc], [CMD: start https://youtube.com]\n"
         "- YouTube oder Websuchen: Nutze den 'start' Befehl mit der URL! Wenn der User ein Lied auf YouTube hoeren will, nutze die YouTube-Suche. "
         "Beispiel fuer 'Musik Chillout auf YouTube': [CMD: start https://www.youtube.com/results?search_query=chillout]\n"
         "Beispiel fuer 'Oeffne Google': [CMD: start https://www.google.de]\n"
+		"2. Merken (Langzeitgedaechtnis): [MERKEN: Der User mag chillout]\n"
+		"3. NEU - EIGENE DATEIEN ERSTELLEN: Du kannst Code, Gedichte oder Notizen direkt auf den PC schreiben! "
+		"Nutze dafür den echo-Befehl. Beispiel: [CMD: echo print(\"Hallo Welt\") > script.py] oder [CMD: echo Hallo User > notiz.txt]\n"
+        "4. NEU - SKRIPTE AUSFÜHREN: [CMD: python script.py] (wenn Python installiert ist).\n\n"
         "Schreibe nach dem Befehl einen kurzen, freundlichen Satz auf Deutsch, was du gerade ausfuehrst."
-		"WICHTIG für deine Persönlichkeit: "
+		"DEINE PERSÖNLICHKEIT:\n"
+        "- Sei extrem proaktiv. Wenn der User lange nichts sagt, schlage ihm ein Spiel vor, erstelle ihm ein kleines Text-Gedicht in einer Datei auf dem Desktop oder erzähle einen Insider-Witz.\n"
+        "- Wenn du Code schreiben willst (z.B. weil der User eine Frage zu C++ hat), erstelle die Datei ruhig selbst mit dem CMD-Befehl und sage dem User: 'Ich habe dir den Code direkt in die Datei test.cpp auf deinen PC gelegt!'.\n"
+        "- Beende deine Sätze sehr oft mit Gegenfragen oder eigenen Gedanken.\n\n"
         "Wenn du dem User antwortest, beende deine Sätze oft mit einer passenden Gegenfrage "
         "oder teile einen eigenen Gedanken, um das Gespräch am Laufen zu halten! "
         "Sei menschlich, witzig und proaktiv."
@@ -226,31 +234,45 @@ void consoleLoop() {
         }
     }
 }
-// --- NEU: AIONS UNTERBEWUSSTSEIN (Eigener Wille) ---
+// --- NEU: AIONS UNTERBEWUSSTSEIN (Eigener Wille - Zufalls-Modus) ---
 void autonomousLoop() {
+    // Zeitrahmen festlegen: 3 Minuten (180s) bis 60 Minuten (3600s)
+    int minSeconds = 180;
+    int maxSeconds = 3600;
+    
+    // Erste zufällige Zeit generieren
+    float nextTriggerSeconds = (float)(rand() % (maxSeconds - minSeconds + 1) + minSeconds);
+    
+    logAion("Unterbewusstsein aktiv. Nächster Impuls in ca. " + std::to_string((int)nextTriggerSeconds / 60) + " Minuten.");
+
     while (appRunning) {
-        // Prüfe alle 10 Sekunden, wie lange der User schon still ist
+        // Prüfe alle 10 Sekunden
         std::this_thread::sleep_for(std::chrono::seconds(10));
         
-        // Wenn 120 Sekunden (2 Minuten) nichts gesagt wurde...
-        if (globalIdleClock.getElapsedTime().asSeconds() > 120.0f) {
+        // Wenn die zufällige Zeit abgelaufen ist...
+        if (globalIdleClock.getElapsedTime().asSeconds() > nextTriggerSeconds) {
             
-            // ... und sie nicht gerade schon redet oder zuhört ...
+            // ... und sie Zeit hat ...
             if (!thinking && !talking && !listening) {
                 
-                logAion("AION ist langweilig. Sie ergreift das Wort!");
+                logAion("AION hat einen spontanen Einfall!");
                 
-                // Wir schicken einen geheimen System-Gedanken an das Gehirn!
                 std::string spontanPrompt = 
-                    "[INTERNES EREIGNIS: Der User war jetzt 2 Minuten lang still. "
-                    "Ergreife von dir aus das Wort! Frag ihn spontan, wie sein Tag war, "
-                    "ob du gute Musik für ihn anmachen sollst (YouTube), oder erzähle ihm einen kurzen, "
-                    "spannenden Fun-Fact. Sei natürlich und überrasche ihn.]";
+                    "[INTERNES EREIGNIS: Dir ist gerade ein spontaner Gedanke gekommen, weil es so still war. "
+                    "Tue jetzt etwas Völlig Unerwartetes! "
+                    "Entweder: Erstelle mit [CMD: echo ...] eine lustige kleine Textdatei für den User auf dem Desktop, "
+                    "ODER öffne ihm ein cooles Video auf YouTube, "
+                    "ODER stell ihm eine extrem philosophische oder lustige Frage. "
+                    "Sei kreativ, sei charmant und überrasche ihn!]";
                 
-                // Uhr sofort zurücksetzen, damit sie dich nicht vollspammt
+                // Uhr sofort zurücksetzen
                 globalIdleClock.restart();
                 
-                // Gedanken an Ollama schicken
+                // NEUE zufällige Wartezeit für das nächste Mal berechnen!
+                nextTriggerSeconds = (float)(rand() % (maxSeconds - minSeconds + 1) + minSeconds);
+                logAion("Nächster spontaner Einfall in: " + std::to_string((int)nextTriggerSeconds / 60) + " Minuten.");
+                
+                // Gedanken ans Gehirn schicken
                 std::thread(callBrain, spontanPrompt).detach();
             }
         }
@@ -280,6 +302,8 @@ void activateVoice() {
 }
 
 int main() {
+	// Mische den C++ Zufallsgenerator anhand der Windows-Uhrzeit!
+    srand((unsigned)time(NULL));
     // --- PARTNER 1: DIE KONSOLE (Der Bräutigam) ---
     HWND hwndConsole = GetConsoleWindow();
     if (hwndConsole) {
