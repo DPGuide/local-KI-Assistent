@@ -25,6 +25,6 @@
 
 ***if you want a matirx face for the KI: face.png***
 
-***its a part for the CMD window. alway move with CMD window***
+***its a part of the CMD window. always move with CMD window***
 
 ***you cant type or speack with "hold left STRG"***
