@@ -104,23 +104,40 @@ void callBrain(std::string p) {
     std::string fullPrompt = systemPrompt + "\n\nUser: " + p;
     // 1. Die universelle Variable für die Antwort
 	std::string aiAnswer = "";
-
 	if (onlineMode) {
 		// ==========================================
-		// 🧠 ONLINE MODUS: GEMINI PRO (via CURL)
+		// 🧠 ONLINE MODUS: GROQ / OPENAI STANDARD (via CURL)
 		// ==========================================
 		CURL* curl = curl_easy_init();
 		if (curl) {
-			std::string apiKey = "DEIN_API_KEY_HIER";
-			std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=" + apiKey;
+			// Für Groq (Kostenlos, super schnell, Llama 3)
+			std::string apiKey = "DEIN_GROQ_API_KEY_HIER";
+			std::string url = "https://api.groq.com/openai/v1/chat/completions";
+			
+			// Falls du doch mal ChatGPT willst, tauschst du es einfach hiergegen aus:
+			// std::string url = "https://api.openai.com/v1/chat/completions";
+
 			json requestBody;
-			requestBody["contents"][0]["parts"][0]["text"] = systemPrompt + "\n" + fullPrompt; 
+			// 1. Das Modell (Groq hat z.B. das große Llama 3)
+			requestBody["model"] = "llama3-70b-8192"; 
+			
+			// 2. Das OpenAI-Format (System und User getrennt)
+			requestBody["messages"] = json::array({
+				{{"role", "system"}, {"content", systemPrompt}},
+				{{"role", "user"}, {"content", fullPrompt}}
+			});
+			
 			std::string jsonString = requestBody.dump();
 			
 			curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+			
+			// 3. Header im OpenAI-Stil (Bearer Token)
 			struct curl_slist* headers = NULL;
 			headers = curl_slist_append(headers, "Content-Type: application/json");
+			std::string authHeader = "Authorization: Bearer " + apiKey;
+			headers = curl_slist_append(headers, authHeader.c_str());
 			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+			
 			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonString.c_str());
 			
 			std::string apiResponse;
@@ -135,16 +152,20 @@ void callBrain(std::string p) {
 			if (res == CURLE_OK) {
 				try {
 					json responseJson = json::parse(apiResponse);
-					aiAnswer = responseJson["candidates"][0]["content"]["parts"][0]["text"];
-					logAion("CLOUD ANSWER: " + aiAnswer);
+					// 4. OpenAI/Groq Antwort-Pfad auslesen
+					if (responseJson.contains("error")) {
+						logAion("API ERROR: " + responseJson["error"]["message"].get<std::string>());
+					} else {
+						aiAnswer = responseJson["choices"][0]["message"]["content"];
+						logAion("CLOUD ANSWER: " + aiAnswer);
+					}
 				} catch (const std::exception& e) {
-					logAion("JSON-Error von Gemini: " + std::string(e.what()));
+					logAion("JSON-Error von der Cloud API: " + std::string(e.what()));
 				}
 			} else {
 				logAion("CURL ERROR: " + std::string(curl_easy_strerror(res)));
 			}
 		}
-	} else {
 		// ==========================================
 		// 🧠 LOKALER MODUS: OLLAMA (via SFML)
 		// ==========================================
@@ -156,7 +177,6 @@ void callBrain(std::string p) {
 		requestBody["stream"] = false;
 		request.setBody(requestBody.dump());
 		request.setField("Content-Type", "application/json");
-		
 		sf::Http::Response response = http.sendRequest(request, sf::seconds(120.f));
 		if (response.getStatus() == sf::Http::Response::Status::Ok) {
 			try {
@@ -169,8 +189,7 @@ void callBrain(std::string p) {
 		} else {
 			logAion("Error connecting to Ollama.");
 		}
-	} // <--- WICHTIG: HIER SIND BEIDE GEHIRNE FERTIG UND GESCHLOSSEN!
-
+	}
 	// ==========================================
 	// 🛡️ GEMEINSAME VERARBEITUNG (EGAL WELCHES GEHIRN)
 	// ==========================================
@@ -302,21 +321,15 @@ void callBrain(std::string p) {
 		moodParams = " --length_scale 1.3 --sentence_silence 1.0";
 	} else if (aiAnswer.find("[MOOD: Neutral]") != std::string::npos) {
 		moodParams = "";
-	}	
-
-	// Mood-Tag löschen
+	}
 	size_t moodStart = aiAnswer.find("[MOOD:");
 	if (moodStart != std::string::npos) {
 		size_t moodEnd = aiAnswer.find("]", moodStart);
 		aiAnswer.erase(moodStart, moodEnd - moodStart + 1);
 	}
-
-	// Datei für Piper schreiben
 	std::ofstream out("ai_answer.txt", std::ios::trunc);
 	out << aiAnswer;
 	out.close();
-
-	// Sprechen
 	if (!aiAnswer.empty()) {
 		while(talking) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -330,9 +343,8 @@ void callBrain(std::string p) {
 		std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
 		talking = false;
 	}
-
 	thinking = false;
-} // <=======
+}
 void voiceLoop() {
     sf::SoundBufferRecorder recorder;
     bool isRecording = false;
