@@ -47,7 +47,7 @@ void callBrain(std::string p) {
     thinking = true;
     logAion("Analyze: " + p);
 	// 1. Das alte Tagebuch lesen
-    std::string erinnerungen = readFile("gedaechtnis.txt");
+    std::string erinnerungen = readFile("memory.txt");
     // 2. Den System-Prompt zusammenbauen (AGENTEN-MODUS)
     std::string systemPrompt =
         "You are AION, a highly intelligent, autonomous AI companion. "
@@ -60,8 +60,9 @@ void callBrain(std::string p) {
         "Example for 'Open Google': [CMD: start https://www.google.de]\n"
 		"If the user says 'activate Open Mic', reply with [CMD: mic]"
 		"2. Remember (long-term memory): [REMEMBER: check youre memory]]\n"
-		"3. NEW - CREATE YOUR OWN FILES: You can write code, poems, or notes directly on your PC! "
-		"Use the echo command for this. Example: [CMD: echo print(\"Hello World\") > script.py] oder [CMD: echo Hello User > note.txt]\n"
+		"3. Create or add to text files: NEVER use the 'echo' command! "
+        "Instead, use this exact format: [WRITE: filename.txt | The text you want to write]\n"
+        "Example: [WRITE: poem.txt | Roses are red, violets are blue.]\n\n"
         "4. NEW - RUN SCRIPTS: [CMD: python script.py] (if Python is installed).\n\n"
         "After the command, write a short, friendly sentence in English explaining what you are doing."
 		"YOUR PERSONALITY:\n"
@@ -88,9 +89,15 @@ void callBrain(std::string p) {
     // 3. ANFRAGE SENDEN (Timeout auf 120 Sekunden, falls die KI länger nachdenkt)
     sf::Http::Response response = http.sendRequest(request, sf::seconds(120.f));
     if (response.getStatus() == sf::Http::Response::Status::Ok) {
-        json responseJson = json::parse(response.getBody());
-        std::string aiAnswer = responseJson["response"];
-        // 4. BEFEHLE EXTRAHIEREN UND AUSFÜHREN [CMD: ...]
+        try {
+            json responseJson = json::parse(response.getBody());
+            std::string aiAnswer = responseJson["response"];
+            if (aiAnswer.empty()) {
+                thinking = false;
+                return;
+            }
+            logAion("RAW AI ANSWER: " + aiAnswer);
+            // 4. BEFEHLE EXTRAHIEREN UND AUSFÜHREN [CMD: ...]
         size_t cmdStart = aiAnswer.find("[CMD:");
         if (cmdStart != std::string::npos) {
             size_t cmdEnd = aiAnswer.find("]", cmdStart);
@@ -108,33 +115,61 @@ void callBrain(std::string p) {
         if (memStart != std::string::npos) {
             size_t memEnd = aiAnswer.find("]", memStart);
             if (memEnd != std::string::npos) {
-                std::string memoryText = aiAnswer.substr(memStart + 8, memEnd - (memStart + 8));
-                logAion("AION IS LEARNING MORE: " + memoryText);
+                std::string memoryText = aiAnswer.substr(memStart + 10, memEnd - (memStart + 10));
+                if (!memoryText.empty() && memoryText[0] == ' ') {
+                    memoryText.erase(0, 1);
+                }
+                logAion("AION IS LEARNING: " + memoryText);
                 std::ofstream memFile("memory.txt", std::ios::app);
                 memFile << "- " << memoryText << "\n";
                 memFile.close();
                 aiAnswer.erase(memStart, memEnd - memStart + 1);
             }
         }
+        size_t writeStart = aiAnswer.find("[WRITE:");
+        if (writeStart != std::string::npos) {
+            size_t writeEnd = aiAnswer.find("]", writeStart);
+            if (writeEnd != std::string::npos) {
+                std::string writeData = aiAnswer.substr(writeStart + 7, writeEnd - (writeStart + 7));
+                size_t separator = writeData.find("|");
+                if (separator != std::string::npos) {
+                    std::string filename = writeData.substr(0, separator);
+                    std::string content = writeData.substr(separator + 1);
+                    if (!filename.empty() && filename[0] == ' ') filename.erase(0, 1);
+                    if (!filename.empty() && filename.back() == ' ') filename.pop_back();
+                    if (!content.empty() && content[0] == ' ') content.erase(0, 1);
+                    std::string fullPath = "Desktop/" + filename;
+                    std::ofstream outFile(fullPath, std::ios::app);
+                    outFile << content << "\n";
+                    outFile.close();
+                    logAion("SANDBOX SCHUTZ: Datei erfolgreich geschrieben -> " + fullPath);
+                } else {
+                    logAion("SANDBOX FEHLER: AION hat den Trennstrich '|' vergessen.");
+                }
+                aiAnswer.erase(writeStart, writeEnd - writeStart + 1);
+            }
+        }
         std::ofstream out("ai_answer.txt", std::ios::trunc);
         out << aiAnswer;
         out.close();
         if (!aiAnswer.empty()) {
-            while(talking) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                while(talking) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                talking = true;
+                std::string voiceCmd = "piper.exe --model voice.onnx --output_file response.wav < ai_answer.txt";
+                std::system(voiceCmd.c_str());
+                std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
+                talking = false;
             }
-            talking = true;
-            std::string voiceCmd = "piper.exe --model voice.onnx --output_file response.wav < ai_answer.txt";
-            std::system(voiceCmd.c_str());
-            std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
-            talking = false;
+        } catch (const std::exception& e) {
+            logAion("JSON-Fehler von Ollama: " + std::string(e.what()));
         }
     } else {
-        logAion("Error connecting to the AI ​​core. Status: " + std::to_string(static_cast<int>(response.getStatus())));
+        logAion("Error connecting to the AI core. Status: " + std::to_string(static_cast<int>(response.getStatus())));
     }
     thinking = false;
 }
-// --- NEU: EIGENER THREAD FÜR DIE OHREN ---
 void voiceLoop() {
     sf::SoundBufferRecorder recorder;
     bool isRecording = false;
