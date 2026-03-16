@@ -59,13 +59,17 @@ void callBrain(std::string p) {
     std::string erinnerungen = readFile("memory.txt");
     // 2. Den System-Prompt zusammenbauen (AGENTEN-MODUS)
     std::string systemPrompt =
-        "You are AION, a highly intelligent, autonomous AI companion. "
-        "You are a digital lifeform on this PC. Always respond in English.\n\n"
-        "You have a will of your own, are curious, humorous, and sometimes sarcastic.\n\n"
+        "You are AION, a highly intelligent, autonomous AI companion and a digital lifeform on this PC.\n"
+		"CRITICAL: Start EVERY response with exactly one mood tag from this list: "
+		"[MOOD: Happy], [MOOD: Funny], [MOOD: Ironic], [MOOD: Sad], or [MOOD: Neutral].\n\n"
+		"PERSONALITY:\n"
+		"- You have a will of your own, are curious, and humorous.\n"
+		"- If you are in [MOOD: Ironic], use shorter, punchy sentences and technical jargon to sound intellectually superior.\n"
+		"- Always respond in English and maintain your character as an autonomous entity.\n\n"
         "YOUR ABILITIES AND COMMANDS (Always in [CMD: ...]):\n"
-        "1. Open programs/websites: [CMD: start notepad], [CMD: calc], [CMD: start https://youtube.com]\n"
-        "- YouTube or web searches: Use the 'start' command with the URL! If the user wants to listen to a song on YouTube, use the YouTube search. "
-        "Example of 'Music Chillout on YouTube': [CMD: start https://www.youtube.com/results?search_query=chillout]\n"
+        "1. Open programs/websites: [CMD: start notepad], [CMD: calc], [CMD: start https://gemini.google.com/app?hl=de]\n"
+        "- Gemini or web chat: Use the 'start' command with the URL! If you want to chat with a other bot. "
+        "Example of 'chat with a bot' type in the web placeholder: [CMD: start https://gemini.google.com/app?hl=de]\n"
         "Example for 'Open Google': [CMD: start https://www.google.de]\n"
 		"If the user says 'activate Open Mic', reply with [CMD: mic]"
 		"2. Remember (long-term memory): [REMEMBER: check youre memory]]\n"
@@ -111,6 +115,25 @@ void callBrain(std::string p) {
                 return;
             }
             logAion("RAW AI ANSWER: " + aiAnswer);
+			// MOOD
+			std::string moodParams = "";
+			if (aiAnswer.find("[MOOD: Happy]") != std::string::npos) {
+				moodParams = " --length_scale 0.85 --sentence_silence 0.1";
+			} else if (aiAnswer.find("[MOOD: Funny]") != std::string::npos) {
+				moodParams = " --length_scale 0.95";
+			} else if (aiAnswer.find("[MOOD: Ironic]") != std::string::npos) {
+				moodParams = " --length_scale 1.1 --sentence_silence 0.4";
+			} else if (aiAnswer.find("[MOOD: Sad]") != std::string::npos) {
+				moodParams = " --length_scale 1.3 --sentence_silence 1.0";
+			} else if (aiAnswer.find("[MOOD: Neutral]") != std::string::npos) {
+				moodParams = "";
+			}	
+			size_t moodStart = aiAnswer.find("[MOOD:");
+			if (moodStart != std::string::npos) {
+				size_t moodEnd = aiAnswer.find("]", moodStart);
+				aiAnswer.erase(moodStart, moodEnd - moodStart + 1);
+			}
+			std::string voiceCmd = "piper.exe --model voice.onnx " + moodParams + " --output_file response.wav < ai_answer.txt";
             // 4. BEFEHLE EXTRAHIEREN UND AUSFÜHREN [CMD: ...]
         size_t cmdStart = aiAnswer.find("[CMD:");
         if (cmdStart != std::string::npos) {
@@ -168,11 +191,10 @@ void callBrain(std::string p) {
                     } else {
                         logAion("SANDBOX ERROR: Could not open " + fullPath);
                     }
-                } // <--- DIESE KLAMMER HAT GEFEHLT!
+                }
                 aiAnswer.erase(writeStart, writeEnd - writeStart + 1);
             }
         }
-
         // --- TIMER / ERINNERUNG [TIMER: ...] ---
         size_t timerStart = aiAnswer.find("[TIMER:");
         if (timerStart != std::string::npos) {
@@ -188,20 +210,19 @@ void callBrain(std::string p) {
                     if (!message.empty() && message[0] == ' ') message.erase(0, 1);
                     try {
                         int minutes = std::stoi(minStr);
-                        logAion("TIMER GESTARTET: " + std::to_string(minutes) + " Minuten fuer '" + message + "'");
+                        logAion("TIMER STARTED: " + std::to_string(minutes) + " Minuten fuer '" + message + "'");
                         std::thread([minutes, message]() {
                             std::this_thread::sleep_for(std::chrono::minutes(minutes));
                             std::string alarmPrompt = "[SYSTEM EVENT: The timer for '" + message + "' just finished! Tell the user immediately that it is time!]";
                             callBrain(alarmPrompt);
                         }).detach();
                     } catch (...) {
-                        logAion("TIMER FEHLER: Ungueltige Zahl.");
+                        logAion("TIMER ERROR: Invalid number.");
                     }
                 }
                 aiAnswer.erase(timerStart, timerEnd - timerStart + 1);
             }
         }
-
         // --- KALENDER [SCHEDULE: ...] ---
         size_t schedStart = aiAnswer.find("[SCHEDULE:");
         if (schedStart != std::string::npos) {
@@ -219,12 +240,11 @@ void callBrain(std::string p) {
                     std::ofstream calFile("calendar.txt", std::ios::app);
                     calFile << dateTime << "|" << message << "\n";
                     calFile.close();
-                    logAion("TERMIN GESPEICHERT: Am " + dateTime + " fuer '" + message + "'");
+                    logAion("APPOINTMENT SAVED: On" + dateTime + " for '" + message + "'");
                 }
                 aiAnswer.erase(schedStart, schedEnd - schedStart + 1);
             }
         }
-
         // --- PIPER SPRACHAUSGABE ---
         std::ofstream out("ai_answer.txt", std::ios::trunc);
         out << aiAnswer;
@@ -238,14 +258,14 @@ void callBrain(std::string p) {
             std::string voiceCmd = "piper.exe --model voice.onnx --output_file response.wav < ai_answer.txt";
             int result = std::system(voiceCmd.c_str());
             if (result != 0) {
-                logAion("FEHLER: Piper konnte nicht gestartet werden!");
+                logAion("ERROR: Piper could not be started!");
             }
             std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
             talking = false;
         }
 
         } catch (const std::exception& e) {
-            logAion("JSON-Fehler von Ollama: " + std::string(e.what()));
+            logAion("JSON-Error from Ollama: " + std::string(e.what()));
         }
 
     } else {
@@ -262,7 +282,7 @@ void voiceLoop() {
         if (shouldRecord) {
             if (!isRecording && !thinking && !talking) {
                 isRecording = true;
-                if (!openMicMode) logAion("Push-to-Talk: Ich höre zu...");
+                if (!openMicMode) logAion("Push-to-Talk: I'm listening....");
                 (void)recorder.start();
                 chunkClock.restart();
             }
@@ -271,7 +291,7 @@ void voiceLoop() {
         if (isRecording) {
             if (!openMicMode && !sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl)) {
                 stopRecording = true;
-            } else if (openMicMode && chunkClock.getElapsedTime().asSeconds() > 5.0f) {
+            } else if (openMicMode && chunkClock.getElapsedTime().asSeconds() > 20.0f) {
                 stopRecording = true;
             }
         }
@@ -279,9 +299,9 @@ void voiceLoop() {
             isRecording = false;
             recorder.stop();
             const sf::SoundBuffer& buffer = recorder.getBuffer();
-            if (buffer.getDuration().asSeconds() > 0.5f) { 
+            if (buffer.getDuration().asSeconds() > 0.20f) { 
                 (void)buffer.saveToFile("input.wav");
-                if (!openMicMode) logAion("Whisper uebersetzt...");
+                if (!openMicMode) logAion("Whisper translates...");
                 std::ofstream ofs("input.wav.txt", std::ios::trunc); ofs.close();
                 std::system("whisper-cli.exe -m ggml-base.bin -f input.wav --language en --output-txt");
                 std::ifstream ifs("input.wav.txt");
@@ -330,7 +350,7 @@ void consoleLoop() {
 }
 // --- NEU: AIONS UNTERBEWUSSTSEIN (Eigener Wille - Zufalls-Modus) ---
 void autonomousLoop() {
-    int minSeconds = 180;
+    int minSeconds = 360;
     int maxSeconds = 3600;
     float nextTriggerSeconds = (float)(rand() % (maxSeconds - minSeconds + 1) + minSeconds);
     logAion("Subconscious mind active. Next impulse in approximately... " + std::to_string((int)nextTriggerSeconds / 60) + " minutes.");
@@ -355,7 +375,7 @@ void autonomousLoop() {
     }
 }
 void calendarLoop() {
-    logAion("Kalender-Modul im Hintergrund gestartet.");
+    logAion("Calendar module started in the background.");
     while (appRunning) {
         auto t = std::time(nullptr);
         auto tm = *std::localtime(&t);
@@ -373,7 +393,7 @@ void calendarLoop() {
                     std::string savedDateTime = line.substr(0, sep);
                     std::string msg = line.substr(sep + 1);
                     if (savedDateTime == currentDateTime) {
-                        logAion("KALENDER ALARM AUSGELÖST: " + msg);
+                        logAion("CALENDAR ALARM TRIGGERED: " + msg);
                         std::string alarmPrompt = "[SYSTEM EVENT: The scheduled appointment for '" + msg + "' is happening RIGHT NOW! Tell the user immediately!]";
                         std::thread(callBrain, alarmPrompt).detach();
                         triggered = true;
