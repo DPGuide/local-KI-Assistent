@@ -18,6 +18,7 @@
 #include <optional>
 #include <cstdlib>
 #include <chrono>
+#include <algorithm>
 using json = nlohmann::json;
 // --- KONFIGURATION (ORIGINAL OPTIK) ---
 namespace Face {
@@ -48,6 +49,7 @@ void logAion(const std::string& msg) {
 }
 void callBrain(std::string p) {
     thinking = true;
+	talking = false;
     logAion("Analyze: " + p);
     auto t = std::time(nullptr);
     auto tm = *std::localtime(&t);
@@ -151,20 +153,27 @@ void callBrain(std::string p) {
                 if (separator != std::string::npos) {
                     std::string filename = writeData.substr(0, separator);
                     std::string content = writeData.substr(separator + 1);
-                    if (!filename.empty() && filename[0] == ' ') filename.erase(0, 1);
-                    if (!filename.empty() && filename.back() == ' ') filename.pop_back();
+                    
+                    filename.erase(std::remove(filename.begin(), filename.end(), '\r'), filename.end());
+                    filename.erase(std::remove(filename.begin(), filename.end(), '\n'), filename.end());
+                    filename.erase(std::remove(filename.begin(), filename.end(), ' '), filename.end());
                     if (!content.empty() && content[0] == ' ') content.erase(0, 1);
+                    
                     std::string fullPath = "Desktop/" + filename;
                     std::ofstream outFile(fullPath, std::ios::app);
-                    outFile << content << "\n";
-                    outFile.close();
-                    logAion("SANDBOX SCHUTZ: Datei erfolgreich geschrieben -> " + fullPath);
-                } else {
-                    logAion("SANDBOX FEHLER: AION hat den Trennstrich '|' vergessen.");
-                }
+                    if (outFile.is_open()) {
+                        outFile << content << "\n";
+                        outFile.close();
+                        logAion("SANDBOX PROTECTION: File written -> " + fullPath);
+                    } else {
+                        logAion("SANDBOX ERROR: Could not open " + fullPath);
+                    }
+                } // <--- DIESE KLAMMER HAT GEFEHLT!
                 aiAnswer.erase(writeStart, writeEnd - writeStart + 1);
             }
         }
+
+        // --- TIMER / ERINNERUNG [TIMER: ...] ---
         size_t timerStart = aiAnswer.find("[TIMER:");
         if (timerStart != std::string::npos) {
             size_t timerEnd = aiAnswer.find("]", timerStart);
@@ -186,14 +195,14 @@ void callBrain(std::string p) {
                             callBrain(alarmPrompt);
                         }).detach();
                     } catch (...) {
-                        logAion("TIMER FEHLER: AION hat keine gueltige Zahl generiert.");
+                        logAion("TIMER FEHLER: Ungueltige Zahl.");
                     }
-                } else {
-                    logAion("TIMER FEHLER: Trennstrich '|' fehlt.");
                 }
                 aiAnswer.erase(timerStart, timerEnd - timerStart + 1);
             }
         }
+
+        // --- KALENDER [SCHEDULE: ...] ---
         size_t schedStart = aiAnswer.find("[SCHEDULE:");
         if (schedStart != std::string::npos) {
             size_t schedEnd = aiAnswer.find("]", schedStart);
@@ -206,6 +215,7 @@ void callBrain(std::string p) {
                     if (!dateTime.empty() && dateTime[0] == ' ') dateTime.erase(0, 1);
                     if (!dateTime.empty() && dateTime.back() == ' ') dateTime.pop_back();
                     if (!message.empty() && message[0] == ' ') message.erase(0, 1);
+                    
                     std::ofstream calFile("calendar.txt", std::ios::app);
                     calFile << dateTime << "|" << message << "\n";
                     calFile.close();
@@ -214,22 +224,30 @@ void callBrain(std::string p) {
                 aiAnswer.erase(schedStart, schedEnd - schedStart + 1);
             }
         }
+
+        // --- PIPER SPRACHAUSGABE ---
         std::ofstream out("ai_answer.txt", std::ios::trunc);
         out << aiAnswer;
         out.close();
+
         if (!aiAnswer.empty()) {
-                while(talking) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                }
-                talking = true;
-                std::string voiceCmd = "piper.exe --model voice.onnx --output_file response.wav < ai_answer.txt";
-                std::system(voiceCmd.c_str());
-                std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
-                talking = false;
+            while(talking) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
+            talking = true;
+            std::string voiceCmd = "piper.exe --model voice.onnx --output_file response.wav < ai_answer.txt";
+            int result = std::system(voiceCmd.c_str());
+            if (result != 0) {
+                logAion("FEHLER: Piper konnte nicht gestartet werden!");
+            }
+            std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
+            talking = false;
+        }
+
         } catch (const std::exception& e) {
             logAion("JSON-Fehler von Ollama: " + std::string(e.what()));
         }
+
     } else {
         logAion("Error connecting to the AI core. Status: " + std::to_string(static_cast<int>(response.getStatus())));
     }
@@ -277,7 +295,7 @@ void voiceLoop() {
                     fullText.find("Thank you.") == std::string::npos && 
                     fullText.find("Amara.org") == std::string::npos &&
                     fullText.find("Bye.") == std::string::npos) {
-                    logAion("USER SAGT: " + fullText);
+                    logAion("USER Say: " + fullText);
                     globalIdleClock.restart(); 
                     std::thread(callBrain, fullText).detach();
                 } else {
