@@ -3,6 +3,7 @@
 #include <SFML/System.hpp>
 #include <SFML/Network.hpp>
 #include <SFML/Audio.hpp>
+#include "curl/curl.h"
 #include "json.hpp"
 #include <windows.h>
 #include <iostream>
@@ -34,6 +35,7 @@ std::atomic<bool> talking{false};
 std::atomic<bool> isBooting{true};
 std::atomic<bool> resetIdleTimer{true};
 std::atomic<bool> openMicMode{false};
+std::atomic<bool> onlineMode = false;
 sf::Clock globalIdleClock;
 // UI STATE
 bool isVisible = true;
@@ -46,6 +48,11 @@ std::string readFile(const std::string& filename) {
 }
 void logAion(const std::string& msg) {
     std::cout << "[AION LOG] " << msg << std::endl;
+}
+// Dieser kleine Helfer fängt die Antwort aus dem Internet auf
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
 }
 void callBrain(std::string p) {
     thinking = true;
@@ -95,185 +102,237 @@ void callBrain(std::string p) {
         "HERE ARE YOUR PREVIOUS MEMORIES OF THE USER:\n" + 
         erinnerungen;
     std::string fullPrompt = systemPrompt + "\n\nUser: " + p;
-    // 2. HTTP-REQUEST AN DEINE LOKALE KI (Ollama) VORBEREITEN
-    sf::Http http("127.0.0.1", 11434);
-    sf::Http::Request request("/api/generate", sf::Http::Request::Method::Post);
-    // JSON-Payload für Ollama erstellen
-    json requestBody;
-    requestBody["model"] = "llama3.2";
-    requestBody["prompt"] = fullPrompt;
-    requestBody["stream"] = false;
-    request.setBody(requestBody.dump());
-    request.setField("Content-Type", "application/json");
-    // 3. ANFRAGE SENDEN (Timeout auf 120 Sekunden, falls die KI länger nachdenkt)
-    sf::Http::Response response = http.sendRequest(request, sf::seconds(120.f));
-    if (response.getStatus() == sf::Http::Response::Status::Ok) {
-        try {
-            json responseJson = json::parse(response.getBody());
-            std::string aiAnswer = responseJson["response"];
-            if (aiAnswer.empty()) {
-                thinking = false;
-                return;
-            }
-            logAion("RAW AI ANSWER: " + aiAnswer);
-            // 4. BEFEHLE EXTRAHIEREN UND AUSFÜHREN [CMD: ...]
-        size_t cmdStart = aiAnswer.find("[CMD:");
-        if (cmdStart != std::string::npos) {
-            size_t cmdEnd = aiAnswer.find("]", cmdStart);
-            if (cmdEnd != std::string::npos) {
-                std::string command = aiAnswer.substr(cmdStart + 5, cmdEnd - (cmdStart + 5));
-                if (!command.empty() && command[0] == ' ') command.erase(0, 1);
-                if (command == "mic") {
-                    openMicMode = !openMicMode;
-                    logAion("MIKROFON-MODUS GEWECHSELT! Open Mic ist jetzt: " + std::string(openMicMode ? "AN" : "AUS"));
-                } 
-                else {
-                    logAion("EXECUTION SYSTEM COMMAND: " + command);
-                    std::system(command.c_str());
-                }
-                aiAnswer.erase(cmdStart, cmdEnd - cmdStart + 1);
-            }
-        }
-        size_t memStart = aiAnswer.find("[REMEMBER:");
-        if (memStart != std::string::npos) {
-            size_t memEnd = aiAnswer.find("]", memStart);
-            if (memEnd != std::string::npos) {
-                std::string memoryText = aiAnswer.substr(memStart + 10, memEnd - (memStart + 10));
-                if (!memoryText.empty() && memoryText[0] == ' ') {
-                    memoryText.erase(0, 1);
-                }
-                logAion("AION IS LEARNING: " + memoryText);
-                std::ofstream memFile("memory.txt", std::ios::app);
-                memFile << "- " << memoryText << "\n";
-                memFile.close();
-                aiAnswer.erase(memStart, memEnd - memStart + 1);
-            }
-        }
-        size_t writeStart = aiAnswer.find("[WRITE:");
-        if (writeStart != std::string::npos) {
-            size_t writeEnd = aiAnswer.find("]", writeStart);
-            if (writeEnd != std::string::npos) {
-                std::string writeData = aiAnswer.substr(writeStart + 7, writeEnd - (writeStart + 7));
-                size_t separator = writeData.find("|");
-                if (separator != std::string::npos) {
-                    std::string filename = writeData.substr(0, separator);
-                    std::string content = writeData.substr(separator + 1);
-                    
-                    filename.erase(std::remove(filename.begin(), filename.end(), '\r'), filename.end());
-                    filename.erase(std::remove(filename.begin(), filename.end(), '\n'), filename.end());
-                    filename.erase(std::remove(filename.begin(), filename.end(), ' '), filename.end());
-                    if (!content.empty() && content[0] == ' ') content.erase(0, 1);
-                    
-                    std::string fullPath = "Desktop/" + filename;
-                    std::ofstream outFile(fullPath, std::ios::app);
-                    if (outFile.is_open()) {
-                        outFile << content << "\n";
-                        outFile.close();
-                        logAion("SANDBOX PROTECTION: File written -> " + fullPath);
-                    } else {
-                        logAion("SANDBOX ERROR: Could not open " + fullPath);
-                    }
-                }
-                aiAnswer.erase(writeStart, writeEnd - writeStart + 1);
-            }
-        }
-        // --- TIMER / ERINNERUNG [TIMER: ...] ---
-        size_t timerStart = aiAnswer.find("[TIMER:");
-        if (timerStart != std::string::npos) {
-            size_t timerEnd = aiAnswer.find("]", timerStart);
-            if (timerEnd != std::string::npos) {
-                std::string timerData = aiAnswer.substr(timerStart + 7, timerEnd - (timerStart + 7));
-                size_t separator = timerData.find("|");
-                if (separator != std::string::npos) {
-                    std::string minStr = timerData.substr(0, separator);
-                    std::string message = timerData.substr(separator + 1);
-                    if (!minStr.empty() && minStr[0] == ' ') minStr.erase(0, 1);
-                    if (!minStr.empty() && minStr.back() == ' ') minStr.pop_back();
-                    if (!message.empty() && message[0] == ' ') message.erase(0, 1);
-                    try {
-                        int minutes = std::stoi(minStr);
-                        logAion("TIMER STARTED: " + std::to_string(minutes) + " Minuten fuer '" + message + "'");
-                        std::thread([minutes, message]() {
-                            std::this_thread::sleep_for(std::chrono::minutes(minutes));
-                            std::string alarmPrompt = "[SYSTEM EVENT: The timer for '" + message + "' just finished! Tell the user immediately that it is time!]";
-                            callBrain(alarmPrompt);
-                        }).detach();
-                    } catch (...) {
-                        logAion("TIMER ERROR: Invalid number.");
-                    }
-                }
-                aiAnswer.erase(timerStart, timerEnd - timerStart + 1);
-            }
-        }
-        // --- KALENDER [SCHEDULE: ...] ---
-        size_t schedStart = aiAnswer.find("[SCHEDULE:");
-        if (schedStart != std::string::npos) {
-            size_t schedEnd = aiAnswer.find("]", schedStart);
-            if (schedEnd != std::string::npos) {
-                std::string schedData = aiAnswer.substr(schedStart + 10, schedEnd - (schedStart + 10));
-                size_t separator = schedData.find("|");
-                if (separator != std::string::npos) {
-                    std::string dateTime = schedData.substr(0, separator);
-                    std::string message = schedData.substr(separator + 1);
-                    if (!dateTime.empty() && dateTime[0] == ' ') dateTime.erase(0, 1);
-                    if (!dateTime.empty() && dateTime.back() == ' ') dateTime.pop_back();
-                    if (!message.empty() && message[0] == ' ') message.erase(0, 1);
-                    
-                    std::ofstream calFile("calendar.txt", std::ios::app);
-                    calFile << dateTime << "|" << message << "\n";
-                    calFile.close();
-                    logAion("APPOINTMENT SAVED: On" + dateTime + " for '" + message + "'");
-                }
-                aiAnswer.erase(schedStart, schedEnd - schedStart + 1);
-            }
-        }
-        // --- PIPER SPRACHAUSGABE ---
-        std::string moodParams = "";
-        if (aiAnswer.find("[MOOD: Happy]") != std::string::npos) {
-            moodParams = " --length_scale 0.85 --sentence_silence 0.1";
-        } else if (aiAnswer.find("[MOOD: Funny]") != std::string::npos) {
-            moodParams = " --length_scale 0.95";
-        } else if (aiAnswer.find("[MOOD: Romantic]") != std::string::npos) {
-            moodParams = " --length_scale 1.22 --sentence_silence 1.1 --noise_scale 0.4";
-        } else if (aiAnswer.find("[MOOD: Ironic]") != std::string::npos) {
-            moodParams = " --length_scale 1.1 --sentence_silence 0.4";
-        } else if (aiAnswer.find("[MOOD: Sad]") != std::string::npos) {
-            moodParams = " --length_scale 1.3 --sentence_silence 1.0";
-        } else if (aiAnswer.find("[MOOD: Neutral]") != std::string::npos) {
-            moodParams = "";
-        }
-        size_t moodStart = aiAnswer.find("[MOOD:");
-        if (moodStart != std::string::npos) {
-            size_t moodEnd = aiAnswer.find("]", moodStart);
-            aiAnswer.erase(moodStart, moodEnd - moodStart + 1);
-        }
-        std::ofstream out("ai_answer.txt", std::ios::trunc);
-        out << aiAnswer;
-        out.close();
-        if (!aiAnswer.empty()) {
-            while(talking) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-            talking = true;
-            std::string voiceCmd = "piper.exe --model voice.onnx" + moodParams + " --output_file response.wav < ai_answer.txt";
-            
-            int result = std::system(voiceCmd.c_str());
-            if (result != 0) {
-                logAion("ERROR: Piper could not be started!");
-            }
-            std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
-            talking = false;
-        }
+    // 1. Die universelle Variable für die Antwort
+	std::string aiAnswer = "";
 
-        } catch (const std::exception& e) {
-            logAion("JSON-Error from Ollama: " + std::string(e.what()));
-        }
+	if (onlineMode) {
+		// ==========================================
+		// 🧠 ONLINE MODUS: GEMINI PRO (via CURL)
+		// ==========================================
+		CURL* curl = curl_easy_init();
+		if (curl) {
+			std::string apiKey = "DEIN_API_KEY_HIER";
+			std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=" + apiKey;
+			json requestBody;
+			requestBody["contents"][0]["parts"][0]["text"] = systemPrompt + "\n" + fullPrompt; 
+			std::string jsonString = requestBody.dump();
+			
+			curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+			struct curl_slist* headers = NULL;
+			headers = curl_slist_append(headers, "Content-Type: application/json");
+			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonString.c_str());
+			
+			std::string apiResponse;
+			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+			curl_easy_setopt(curl, CURLOPT_WRITEDATA, &apiResponse);
+			
+			CURLcode res = curl_easy_perform(curl);
+			
+			curl_slist_free_all(headers);
+			curl_easy_cleanup(curl);
+			
+			if (res == CURLE_OK) {
+				try {
+					json responseJson = json::parse(apiResponse);
+					aiAnswer = responseJson["candidates"][0]["content"]["parts"][0]["text"];
+					logAion("CLOUD ANSWER: " + aiAnswer);
+				} catch (const std::exception& e) {
+					logAion("JSON-Error von Gemini: " + std::string(e.what()));
+				}
+			} else {
+				logAion("CURL ERROR: " + std::string(curl_easy_strerror(res)));
+			}
+		}
+	} else {
+		// ==========================================
+		// 🧠 LOKALER MODUS: OLLAMA (via SFML)
+		// ==========================================
+		sf::Http http("127.0.0.1", 11434);
+		sf::Http::Request request("/api/generate", sf::Http::Request::Method::Post);
+		json requestBody;
+		requestBody["model"] = "llama3.2";
+		requestBody["prompt"] = systemPrompt + "\n" + fullPrompt;
+		requestBody["stream"] = false;
+		request.setBody(requestBody.dump());
+		request.setField("Content-Type", "application/json");
+		
+		sf::Http::Response response = http.sendRequest(request, sf::seconds(120.f));
+		if (response.getStatus() == sf::Http::Response::Status::Ok) {
+			try {
+				json responseJson = json::parse(response.getBody());
+				aiAnswer = responseJson["response"];
+				logAion("LOCAL ANSWER: " + aiAnswer);
+			} catch (const std::exception& e) {
+				logAion("JSON-Error von Ollama: " + std::string(e.what()));
+			}
+		} else {
+			logAion("Error connecting to Ollama.");
+		}
+	} // <--- WICHTIG: HIER SIND BEIDE GEHIRNE FERTIG UND GESCHLOSSEN!
 
-    } else {
-        logAion("Error connecting to the AI core. Status: " + std::to_string(static_cast<int>(response.getStatus())));
+	// ==========================================
+	// 🛡️ GEMEINSAME VERARBEITUNG (EGAL WELCHES GEHIRN)
+	// ==========================================
+	if (aiAnswer.empty()) {
+		thinking = false;
+		return;
+	}
+    size_t cmdStart = aiAnswer.find("[CMD:");
+    if (cmdStart != std::string::npos) {
+        size_t cmdEnd = aiAnswer.find("]", cmdStart);
+        if (cmdEnd != std::string::npos) {
+            std::string command = aiAnswer.substr(cmdStart + 5, cmdEnd - (cmdStart + 5));
+            if (!command.empty() && command[0] == ' ') command.erase(0, 1);
+            if (command == "mic") {
+                openMicMode = !openMicMode;
+                logAion("MIKROFON-MODUS GEWECHSELT! Open Mic ist jetzt: " + std::string(openMicMode ? "AN" : "AUS"));
+            } 
+            else {
+                logAion("EXECUTION SYSTEM COMMAND: " + command);
+                std::system(command.c_str());
+            }
+            aiAnswer.erase(cmdStart, cmdEnd - cmdStart + 1);
+        }
     }
-    thinking = false;
-}
+    size_t memStart = aiAnswer.find("[REMEMBER:");
+    if (memStart != std::string::npos) {
+        size_t memEnd = aiAnswer.find("]", memStart);
+        if (memEnd != std::string::npos) {
+            std::string memoryText = aiAnswer.substr(memStart + 10, memEnd - (memStart + 10));
+            if (!memoryText.empty() && memoryText[0] == ' ') {
+                memoryText.erase(0, 1);
+            }
+            logAion("AION IS LEARNING: " + memoryText);
+            std::ofstream memFile("memory.txt", std::ios::app);
+            memFile << "- " << memoryText << "\n";
+            memFile.close();
+            aiAnswer.erase(memStart, memEnd - memStart + 1);
+        }
+    }
+    size_t writeStart = aiAnswer.find("[WRITE:");
+    if (writeStart != std::string::npos) {
+        size_t writeEnd = aiAnswer.find("]", writeStart);
+        if (writeEnd != std::string::npos) {
+            std::string writeData = aiAnswer.substr(writeStart + 7, writeEnd - (writeStart + 7));
+            size_t separator = writeData.find("|");
+            if (separator != std::string::npos) {
+                std::string filename = writeData.substr(0, separator);
+                std::string content = writeData.substr(separator + 1);
+                
+                filename.erase(std::remove(filename.begin(), filename.end(), '\r'), filename.end());
+                filename.erase(std::remove(filename.begin(), filename.end(), '\n'), filename.end());
+                filename.erase(std::remove(filename.begin(), filename.end(), ' '), filename.end());
+                if (!content.empty() && content[0] == ' ') content.erase(0, 1);
+                
+                std::string fullPath = "Desktop/" + filename;
+                std::ofstream outFile(fullPath, std::ios::app);
+                if (outFile.is_open()) {
+                    outFile << content << "\n";
+                    outFile.close();
+                    logAion("SANDBOX PROTECTION: File written -> " + fullPath);
+                } else {
+                    logAion("SANDBOX ERROR: Could not open " + fullPath);
+                }
+            }
+            aiAnswer.erase(writeStart, writeEnd - writeStart + 1);
+        }
+    }
+    // --- TIMER / ERINNERUNG [TIMER: ...] ---
+    size_t timerStart = aiAnswer.find("[TIMER:");
+    if (timerStart != std::string::npos) {
+        size_t timerEnd = aiAnswer.find("]", timerStart);
+        if (timerEnd != std::string::npos) {
+            std::string timerData = aiAnswer.substr(timerStart + 7, timerEnd - (timerStart + 7));
+            size_t separator = timerData.find("|");
+            if (separator != std::string::npos) {
+                std::string minStr = timerData.substr(0, separator);
+                std::string message = timerData.substr(separator + 1);
+                if (!minStr.empty() && minStr[0] == ' ') minStr.erase(0, 1);
+                if (!minStr.empty() && minStr.back() == ' ') minStr.pop_back();
+                if (!message.empty() && message[0] == ' ') message.erase(0, 1);
+                try {
+                    int minutes = std::stoi(minStr);
+                    logAion("TIMER STARTED: " + std::to_string(minutes) + " Minuten fuer '" + message + "'");
+                    std::thread([minutes, message]() {
+                        std::this_thread::sleep_for(std::chrono::minutes(minutes));
+                        std::string alarmPrompt = "[SYSTEM EVENT: The timer for '" + message + "' just finished! Tell the user immediately that it is time!]";
+                        callBrain(alarmPrompt);
+                    }).detach();
+                } catch (...) {
+                    logAion("TIMER ERROR: Invalid number.");
+                }
+            }
+            aiAnswer.erase(timerStart, timerEnd - timerStart + 1);
+        }
+    }
+    // --- KALENDER [SCHEDULE: ...] ---
+    size_t schedStart = aiAnswer.find("[SCHEDULE:");
+    if (schedStart != std::string::npos) {
+        size_t schedEnd = aiAnswer.find("]", schedStart);
+        if (schedEnd != std::string::npos) {
+            std::string schedData = aiAnswer.substr(schedStart + 10, schedEnd - (schedStart + 10));
+            size_t separator = schedData.find("|");
+            if (separator != std::string::npos) {
+                std::string dateTime = schedData.substr(0, separator);
+                std::string message = schedData.substr(separator + 1);
+                if (!dateTime.empty() && dateTime[0] == ' ') dateTime.erase(0, 1);
+                if (!dateTime.empty() && dateTime.back() == ' ') dateTime.pop_back();
+                if (!message.empty() && message[0] == ' ') message.erase(0, 1);
+                
+                std::ofstream calFile("calendar.txt", std::ios::app);
+                calFile << dateTime << "|" << message << "\n";
+                calFile.close();
+                logAion("APPOINTMENT SAVED: On" + dateTime + " for '" + message + "'");
+            }
+            aiAnswer.erase(schedStart, schedEnd - schedStart + 1);
+        }
+    }
+    // --- MOOD & PIPER SPRACHAUSGABE ---
+	std::string moodParams = "";
+	if (aiAnswer.find("[MOOD: Happy]") != std::string::npos) {
+		moodParams = " --length_scale 0.85 --sentence_silence 0.1";
+	} else if (aiAnswer.find("[MOOD: Funny]") != std::string::npos) {
+		moodParams = " --length_scale 0.95";
+	} else if (aiAnswer.find("[MOOD: Romantic]") != std::string::npos) {
+		moodParams = " --length_scale 1.22 --sentence_silence 1.1 --noise_scale 0.4";
+	} else if (aiAnswer.find("[MOOD: Ironic]") != std::string::npos) {
+		moodParams = " --length_scale 1.1 --sentence_silence 0.4";
+	} else if (aiAnswer.find("[MOOD: Sad]") != std::string::npos) {
+		moodParams = " --length_scale 1.3 --sentence_silence 1.0";
+	} else if (aiAnswer.find("[MOOD: Neutral]") != std::string::npos) {
+		moodParams = "";
+	}	
+
+	// Mood-Tag löschen
+	size_t moodStart = aiAnswer.find("[MOOD:");
+	if (moodStart != std::string::npos) {
+		size_t moodEnd = aiAnswer.find("]", moodStart);
+		aiAnswer.erase(moodStart, moodEnd - moodStart + 1);
+	}
+
+	// Datei für Piper schreiben
+	std::ofstream out("ai_answer.txt", std::ios::trunc);
+	out << aiAnswer;
+	out.close();
+
+	// Sprechen
+	if (!aiAnswer.empty()) {
+		while(talking) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		}
+		talking = true;
+		std::string voiceCmd = "piper.exe --model voice.onnx " + moodParams + " --output_file response.wav < ai_answer.txt";
+		int result = std::system(voiceCmd.c_str());
+		if (result != 0) {
+			logAion("ERROR: Piper could not be started!");
+		}
+		std::system("powershell -c \"(New-Object Media.SoundPlayer 'response.wav').PlaySync()\"");
+		talking = false;
+	}
+
+	thinking = false;
+} // <=======
 void voiceLoop() {
     sf::SoundBufferRecorder recorder;
     bool isRecording = false;
