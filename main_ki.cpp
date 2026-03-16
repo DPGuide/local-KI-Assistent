@@ -134,6 +134,7 @@ void callBrain(std::string p) {
 				aiAnswer.erase(moodStart, moodEnd - moodStart + 1);
 			}
 			std::string voiceCmd = "piper.exe --model voice.onnx " + moodParams + " --output_file response.wav < ai_answer.txt";
+            int result = std::system(voiceCmd.c_str());
             // 4. BEFEHLE EXTRAHIEREN UND AUSFÜHREN [CMD: ...]
         size_t cmdStart = aiAnswer.find("[CMD:");
         if (cmdStart != std::string::npos) {
