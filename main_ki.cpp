@@ -228,7 +228,6 @@ void callBrain(std::string p) {
             }
         }
         // --- PIPER SPRACHAUSGABE ---
-        // 1. Stimmung auslesen und Parameter setzen
         std::string moodParams = "";
         if (aiAnswer.find("[MOOD: Happy]") != std::string::npos) {
             moodParams = " --length_scale 0.85 --sentence_silence 0.1";
@@ -243,27 +242,19 @@ void callBrain(std::string p) {
         } else if (aiAnswer.find("[MOOD: Neutral]") != std::string::npos) {
             moodParams = "";
         }
-        
-        // 2. MOOD-Tag restlos aus dem Text löschen
         size_t moodStart = aiAnswer.find("[MOOD:");
         if (moodStart != std::string::npos) {
             size_t moodEnd = aiAnswer.find("]", moodStart);
             aiAnswer.erase(moodStart, moodEnd - moodStart + 1);
         }
-
-        // 3. Den sauberen Text in die Datei schreiben
         std::ofstream out("ai_answer.txt", std::ios::trunc);
         out << aiAnswer;
         out.close();
-
-        // 4. Piper mit den Parametern starten
         if (!aiAnswer.empty()) {
             while(talking) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             talking = true;
-            
-            // HIER fügst du die moodParams in den Befehl ein!
             std::string voiceCmd = "piper.exe --model voice.onnx" + moodParams + " --output_file response.wav < ai_answer.txt";
             
             int result = std::system(voiceCmd.c_str());
