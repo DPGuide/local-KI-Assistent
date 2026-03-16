@@ -6,6 +6,9 @@
 #include "json.hpp"
 #include <windows.h>
 #include <iostream>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 #include <fstream>
 #include <vector>
 #include <string>
@@ -46,7 +49,11 @@ void logAion(const std::string& msg) {
 void callBrain(std::string p) {
     thinking = true;
     logAion("Analyze: " + p);
-	// 1. Das alte Tagebuch lesen
+    auto t = std::time(nullptr);
+    auto tm = *std::localtime(&t);
+    std::ostringstream timeStream;
+    timeStream << std::put_time(&tm, "%A, %d.%m.%Y %H:%M:%S");
+    std::string currentTime = timeStream.str();
     std::string erinnerungen = readFile("memory.txt");
     // 2. Den System-Prompt zusammenbauen (AGENTEN-MODUS)
     std::string systemPrompt =
@@ -65,6 +72,11 @@ void callBrain(std::string p) {
         "Example: [WRITE: poem.txt | Roses are red, violets are blue.]\n\n"
         "4. NEW - RUN SCRIPTS: [CMD: python script.py] (if Python is installed).\n\n"
         "After the command, write a short, friendly sentence in English explaining what you are doing."
+		"5. Set a timer/reminder: [TIMER: minutes | message]\n"
+        "   Example: [TIMER: 30 | check the food]\n\n"
+		"6. Schedule future events/appointments: [SCHEDULE: DD.MM.YYYY HH:MM | message]\n"
+        "   Example: [SCHEDULE: 18.03.2026 13:00 | bring out the garbage]\n"
+        "   (CRITICAL: Always use exactly this date format with dots and 24-hour time!)\n\n"
 		"YOUR PERSONALITY:\n"
         "- Be extremely proactive. If the user doesn't say anything for a long time, suggest a game, create a short text poem for them in a file on their desktop, or tell an inside joke.\n"
         "- If you want to write code (e.g., because the user has a question about C++), feel free to create the file yourself using the CMD command and tell the user: 'I have placed the code directly into the file test.cpp on your PC!''.\n"
@@ -147,6 +159,55 @@ void callBrain(std::string p) {
                     logAion("SANDBOX FEHLER: AION hat den Trennstrich '|' vergessen.");
                 }
                 aiAnswer.erase(writeStart, writeEnd - writeStart + 1);
+            }
+        }
+        size_t timerStart = aiAnswer.find("[TIMER:");
+        if (timerStart != std::string::npos) {
+            size_t timerEnd = aiAnswer.find("]", timerStart);
+            if (timerEnd != std::string::npos) {
+                std::string timerData = aiAnswer.substr(timerStart + 7, timerEnd - (timerStart + 7));
+                size_t separator = timerData.find("|");
+                if (separator != std::string::npos) {
+                    std::string minStr = timerData.substr(0, separator);
+                    std::string message = timerData.substr(separator + 1);
+                    if (!minStr.empty() && minStr[0] == ' ') minStr.erase(0, 1);
+                    if (!minStr.empty() && minStr.back() == ' ') minStr.pop_back();
+                    if (!message.empty() && message[0] == ' ') message.erase(0, 1);
+                    try {
+                        int minutes = std::stoi(minStr);
+                        logAion("TIMER GESTARTET: " + std::to_string(minutes) + " Minuten fuer '" + message + "'");
+                        std::thread([minutes, message]() {
+                            std::this_thread::sleep_for(std::chrono::minutes(minutes));
+                            std::string alarmPrompt = "[SYSTEM EVENT: The timer for '" + message + "' just finished! Tell the user immediately that it is time!]";
+                            callBrain(alarmPrompt);
+                        }).detach();
+                    } catch (...) {
+                        logAion("TIMER FEHLER: AION hat keine gueltige Zahl generiert.");
+                    }
+                } else {
+                    logAion("TIMER FEHLER: Trennstrich '|' fehlt.");
+                }
+                aiAnswer.erase(timerStart, timerEnd - timerStart + 1);
+            }
+        }
+        size_t schedStart = aiAnswer.find("[SCHEDULE:");
+        if (schedStart != std::string::npos) {
+            size_t schedEnd = aiAnswer.find("]", schedStart);
+            if (schedEnd != std::string::npos) {
+                std::string schedData = aiAnswer.substr(schedStart + 10, schedEnd - (schedStart + 10));
+                size_t separator = schedData.find("|");
+                if (separator != std::string::npos) {
+                    std::string dateTime = schedData.substr(0, separator);
+                    std::string message = schedData.substr(separator + 1);
+                    if (!dateTime.empty() && dateTime[0] == ' ') dateTime.erase(0, 1);
+                    if (!dateTime.empty() && dateTime.back() == ' ') dateTime.pop_back();
+                    if (!message.empty() && message[0] == ' ') message.erase(0, 1);
+                    std::ofstream calFile("calendar.txt", std::ios::app);
+                    calFile << dateTime << "|" << message << "\n";
+                    calFile.close();
+                    logAion("TERMIN GESPEICHERT: Am " + dateTime + " fuer '" + message + "'");
+                }
+                aiAnswer.erase(schedStart, schedEnd - schedStart + 1);
             }
         }
         std::ofstream out("ai_answer.txt", std::ios::trunc);
@@ -257,6 +318,49 @@ void autonomousLoop() {
         }
     }
 }
+void calendarLoop() {
+    logAion("Kalender-Modul im Hintergrund gestartet.");
+    while (appRunning) {
+        auto t = std::time(nullptr);
+        auto tm = *std::localtime(&t);
+        std::ostringstream timeStream;
+        timeStream << std::put_time(&tm, "%d.%m.%Y %H:%M");
+        std::string currentDateTime = timeStream.str();
+        std::ifstream calFileIn("calendar.txt");
+        std::vector<std::string> remainingLines;
+        bool triggered = false;
+        std::string line;
+        if (calFileIn.is_open()) {
+            while (std::getline(calFileIn, line)) {
+                size_t sep = line.find("|");
+                if (sep != std::string::npos) {
+                    std::string savedDateTime = line.substr(0, sep);
+                    std::string msg = line.substr(sep + 1);
+                    if (savedDateTime == currentDateTime) {
+                        logAion("KALENDER ALARM AUSGELÖST: " + msg);
+                        std::string alarmPrompt = "[SYSTEM EVENT: The scheduled appointment for '" + msg + "' is happening RIGHT NOW! Tell the user immediately!]";
+                        std::thread(callBrain, alarmPrompt).detach();
+                        triggered = true;
+                    } else {
+                        remainingLines.push_back(line);
+                    }
+                }
+            }
+            calFileIn.close();
+            if (triggered) {
+                std::ofstream calFileOut("calendar.txt", std::ios::trunc);
+                for (const auto& l : remainingLines) {
+                    calFileOut << l << "\n";
+                }
+                calFileOut.close();
+            }
+        }
+        for (int i = 0; i < 30; i++) {
+            if (!appRunning) return;
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+}
 void startupGreeting() {
     isBooting = true;
     logAion("System Booting...");
@@ -321,6 +425,7 @@ int main() {
     std::thread(consoleLoop).detach();
 	std::thread(voiceLoop).detach();
 	std::thread(autonomousLoop).detach();
+	std::thread(calendarLoop).detach();
     sf::Clock idleClock, animClock, blinkClock;
     float nextBlinkTime = (float)(rand() % 3 + 2);
     bool isBlinking = false;
