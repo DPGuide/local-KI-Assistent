@@ -2,7 +2,7 @@
 
 ***files you need from whisper-bin-x64, curl.se & piper_windows_amd64 & SFML***
 
-***for poor people free API KEY by console.groq.com***
+***for poor people free API KEY by "console.groq.com"***
 
 ***https://curl.se/windows/***
 + extract it to c:\curl
