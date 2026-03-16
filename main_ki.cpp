@@ -115,11 +115,15 @@ void callBrain(std::string p) {
             size_t cmdEnd = aiAnswer.find("]", cmdStart);
             if (cmdEnd != std::string::npos) {
                 std::string command = aiAnswer.substr(cmdStart + 5, cmdEnd - (cmdStart + 5));
-                if (!command.empty() && command[0] == ' ') {
-                    command.erase(0, 1);
+                if (!command.empty() && command[0] == ' ') command.erase(0, 1);
+                if (command == "mic") {
+                    openMicMode = !openMicMode;
+                    logAion("MIKROFON-MODUS GEWECHSELT! Open Mic ist jetzt: " + std::string(openMicMode ? "AN" : "AUS"));
+                } 
+                else {
+                    logAion("EXECUTION SYSTEM COMMAND: " + command);
+                    std::system(command.c_str());
                 }
-                logAion("EXECUTION SYSTEM COMMAND: " + command);
-                std::system(command.c_str());
                 aiAnswer.erase(cmdStart, cmdEnd - cmdStart + 1);
             }
         }
@@ -234,41 +238,55 @@ void callBrain(std::string p) {
 void voiceLoop() {
     sf::SoundBufferRecorder recorder;
     bool isRecording = false;
+    sf::Clock chunkClock;
     while (appRunning) {
-        // Logik: Entweder Taste gedrückt ODER Open Mic ist an (aber nur wenn sie nicht gerade selbst redet!)
-        bool trigger = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl) || (openMicMode && !talking && !thinking);
-        if (trigger) {
+        bool shouldRecord = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl) || openMicMode;
+        if (shouldRecord) {
             if (!isRecording && !thinking && !talking) {
                 isRecording = true;
-                logAion(openMicMode ? "Open Mic active: I'm listening..." : "PTT active: I'm listening...");
+                if (!openMicMode) logAion("Push-to-Talk: Ich höre zu...");
                 (void)recorder.start();
+                chunkClock.restart();
             }
-        } 
-        else if (isRecording) {
+        }
+        bool stopRecording = false;
+        if (isRecording) {
+            if (!openMicMode && !sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl)) {
+                stopRecording = true;
+            } else if (openMicMode && chunkClock.getElapsedTime().asSeconds() > 5.0f) {
+                stopRecording = true;
+            }
+        }
+        if (stopRecording) {
             isRecording = false;
             recorder.stop();
             const sf::SoundBuffer& buffer = recorder.getBuffer();
-            float minDuration = openMicMode ? 0.8f : 0.5f;
-            if (buffer.getDuration().asSeconds() > minDuration) {
-                logAion("Process...");
+            if (buffer.getDuration().asSeconds() > 0.5f) { 
                 (void)buffer.saveToFile("input.wav");
+                if (!openMicMode) logAion("Whisper uebersetzt...");
+                std::ofstream ofs("input.wav.txt", std::ios::trunc); ofs.close();
                 std::system("whisper-cli.exe -m ggml-base.bin -f input.wav --language en --output-txt");
                 std::ifstream ifs("input.wav.txt");
                 std::string voiceText;
-                if (std::getline(ifs, voiceText)) {
-                    if (voiceText.length() > 3) {
-                        logAion("Heard: " + voiceText);
-                        globalIdleClock.restart();
-                        std::thread(callBrain, voiceText).detach();
-                    }
+                std::string fullText = "";
+                while (std::getline(ifs, voiceText)) {
+                    fullText += voiceText + " ";
                 }
                 ifs.close();
+                if (fullText.length() > 5 && 
+                    fullText.find("Thank you.") == std::string::npos && 
+                    fullText.find("Amara.org") == std::string::npos &&
+                    fullText.find("Bye.") == std::string::npos) {
+                    logAion("USER SAGT: " + fullText);
+                    globalIdleClock.restart(); 
+                    std::thread(callBrain, fullText).detach();
+                } else {
+                }
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(openMicMode ? 200 : 10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 }
-// --- ZURUECK ZUM URSPRUNG: DIE KONSOLE KANN WIEDER TIPPEN ---
 void consoleLoop() {
     std::string input;
     while (appRunning) {
