@@ -1,6 +1,9 @@
-***"g++ main_ki.cpp -I"C:\SFML\include" -L"C:\SFML\lib" -lsfml-graphics -lsfml-window -lsfml-audio -lsfml-system -lsfml-network -lgdi32 -lwinmm -o aion_nexus.exe"***
+***hybrid mode offline / online "g++ main_ki.cpp -I"C:\SFML\include" -I"C:\curl\include" -L"C:\SFML\lib" -lsfml-graphics -lsfml-window -lsfml-audio -lsfml-system -lsfml-network -lgdi32 -lwinmm "C:\curl\lib\libcurl.dll.a" -o aion_nexus.exe"***
 
-***files you need from whisper-bin-x64 & piper_windows_amd64 & SFML***
+***files you need from whisper-bin-x64, curl.se & piper_windows_amd64 & SFML***
+
+***https://curl.se/windows/***
++ extract it to c:\curl
 
 ***https://huggingface.co/ggerganov/whisper.cpp/tree/main***
 
