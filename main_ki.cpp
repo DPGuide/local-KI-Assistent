@@ -35,7 +35,7 @@ std::atomic<bool> talking{false};
 std::atomic<bool> isBooting{true};
 std::atomic<bool> resetIdleTimer{true};
 std::atomic<bool> openMicMode{false};
-std::atomic<bool> onlineMode = false;
+std::atomic<bool> onlineMode = true;
 sf::Clock globalIdleClock;
 // UI STATE
 bool isVisible = true;
@@ -397,6 +397,16 @@ void consoleLoop() {
                 thinking = false;
                 talking = false;
             }
+			if (input == "/online") {
+				onlineMode = true;
+				logAion("SYSTEM: Schalte um auf ONLINE MODUS (Gemini Pro)");
+				continue; 
+			} 
+			else if (input == "/offline") {
+				onlineMode = false;
+				logAion("SYSTEM: Schalte um auf OFFLINE MODUS (Ollama)");
+				continue; 
+			}
 			if (input == "mic") {
             openMicMode = !openMicMode;
             logAion(openMicMode ? "OPEN MIC ACTIVATED!" : "PUSH-TO-TALK ENABLED!");
