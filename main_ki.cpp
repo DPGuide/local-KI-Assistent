@@ -111,7 +111,7 @@ void callBrain(std::string p) {
 		CURL* curl = curl_easy_init();
 		if (curl) {
 			// Für Groq (Kostenlos, super schnell, Llama 3)
-			std::string apiKey = "DEIN_GROQ_API_KEY_HIER";
+			std::string apiKey = "APIKEY";
 			std::string url = "https://api.groq.com/openai/v1/chat/completions";
 			
 			// Falls du doch mal ChatGPT willst, tauschst du es einfach hiergegen aus:
@@ -119,7 +119,7 @@ void callBrain(std::string p) {
 
 			json requestBody;
 			// 1. Das Modell (Groq hat z.B. das große Llama 3)
-			requestBody["model"] = "llama3-70b-8192"; 
+			requestBody["model"] = "llama-3.3-70b-versatile"; 
 			
 			// 2. Das OpenAI-Format (System und User getrennt)
 			requestBody["messages"] = json::array({
