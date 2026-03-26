@@ -111,7 +111,7 @@ void callBrain(std::string p) {
 		CURL* curl = curl_easy_init();
 		if (curl) {
 			// Für Groq (Kostenlos, super schnell, Llama 3)
-			std::string apiKey = "APIKEY";
+			std::string apiKey = "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";
 			std::string url = "https://api.groq.com/openai/v1/chat/completions";
 			
 			// Falls du doch mal ChatGPT willst, tauschst du es einfach hiergegen aus:
@@ -171,13 +171,20 @@ void callBrain(std::string p) {
 		// ==========================================
 		sf::Http http("127.0.0.1", 11434);
 		sf::Http::Request request("/api/generate", sf::Http::Request::Method::Post);
+		
 		json requestBody;
 		requestBody["model"] = "llama3.2";
 		requestBody["prompt"] = systemPrompt + "\n" + fullPrompt;
 		requestBody["stream"] = false;
+		
 		request.setBody(requestBody.dump());
 		request.setField("Content-Type", "application/json");
+		
+		// ---> NEUER DEBUG-TEXT <---
+		logAion("SYSTEM: Sende Daten an lokales Ollama...");
+		
 		sf::Http::Response response = http.sendRequest(request, sf::seconds(120.f));
+		
 		if (response.getStatus() == sf::Http::Response::Status::Ok) {
 			try {
 				json responseJson = json::parse(response.getBody());
@@ -187,15 +194,16 @@ void callBrain(std::string p) {
 				logAion("JSON-Error von Ollama: " + std::string(e.what()));
 			}
 		} else {
-			logAion("Error connecting to Ollama.");
+			// Hier lassen wir uns jetzt den genauen Fehlercode ausgeben!
+			logAion("Error connecting to Ollama. HTTP Status: " + std::to_string(static_cast<int>(response.getStatus())));
 		}
-	}
-	// ==========================================
-	// 🛡️ GEMEINSAME VERARBEITUNG (EGAL WELCHES GEHIRN)
-	// ==========================================
-	if (aiAnswer.empty()) {
-		thinking = false;
-		return;
+		// ==========================================
+		// 🛡️ GEMEINSAME VERARBEITUNG (EGAL WELCHES GEHIRN)
+		// ==========================================
+		if (aiAnswer.empty()) {
+			thinking = false;
+			return;
+		}
 	}
     size_t cmdStart = aiAnswer.find("[CMD:");
     if (cmdStart != std::string::npos) {
