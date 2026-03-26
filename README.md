@@ -1,4 +1,4 @@
-***Please run the aion_nexus.exe as if you wanna have the face overblending on the CMD window, without admin rights face will be seperate. but if you minimize face always will popup if speaking****
+***Please run the aion_nexus.exe as ADMIN if you wanna have the face overblending on the CMD window, without admin rights face will be seperate. but if you minimize face always will popup if speaking****
 
 ***hybrid mode offline / online "g++ main_ki.cpp -I"C:\SFML\include" -I"C:\curl\include" -L"C:\SFML\lib" -lsfml-graphics -lsfml-window -lsfml-audio -lsfml-system -lsfml-network -lgdi32 -lwinmm "C:\curl\lib\libcurl.dll.a" -o aion_nexus.exe"***
 
