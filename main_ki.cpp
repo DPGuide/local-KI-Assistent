@@ -1,3 +1,4 @@
+#define CURL_STATICLIB
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
 #include <SFML/System.hpp>
@@ -20,6 +21,8 @@
 #include <cstdlib>
 #include <chrono>
 #include <algorithm>
+#include <array>
+#include <memory>
 using json = nlohmann::json;
 // --- KONFIGURATION (ORIGINAL OPTIK) ---
 namespace Face {
@@ -49,6 +52,21 @@ std::string readFile(const std::string& filename) {
 void logAion(const std::string& msg) {
     std::cout << "[AION LOG] " << msg << std::endl;
 }
+// HIER MUSS execCommand STEHEN:
+std::string execCommand(const char* cmd) {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::string fullCmd = std::string(cmd) + " 2>&1";
+    // Unter Windows nutzen wir _popen und _pclose
+    FILE* pipe = _popen(fullCmd.c_str(), "r"); 
+    if (!pipe) return "Error!";
+    
+    while (fgets(buffer.data(), 128, pipe) != NULL) {
+        result += buffer.data();
+    }
+    _pclose(pipe);
+    return result;
+}
 // Dieser kleine Helfer fängt die Antwort aus dem Internet auf
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     ((std::string*)userp)->append((char*)contents, size * nmemb);
@@ -71,7 +89,7 @@ void callBrain(std::string p) {
 		"[MOOD: Happy], [MOOD: Funny], [MOOD: Romantic], [MOOD: Ironic], [MOOD: Sad], or [MOOD: Neutral].\n\n"
 		"PERSONALITY:\n"
         "YOUR ABILITIES AND COMMANDS (Always in [CMD: ...]):\n"
-        "1. Open programs/websites: [CMD: start notepad], [CMD: calc], [CMD: start https://gemini.google.com/app?hl=de]\n"
+        "1. Open programs/websites: [CMD: start notepad++], [CMD: calc], [CMD: start https://gemini.google.com/app?hl=de]\n"
         "- Gemini or web chat: Use the 'start' command with the URL! If you want to chat with a other bot. "
         "Example of 'chat with a bot' type in the web placeholder: [CMD: start https://gemini.google.com/app?hl=de]\n"
         "Example for 'Open Google': [CMD: start https://www.google.de]\n"
@@ -217,7 +235,18 @@ void callBrain(std::string p) {
             } 
             else {
                 logAion("EXECUTION SYSTEM COMMAND: " + command);
-                std::system(command.c_str());
+                
+                // Hier rufen wir die Funktion von oben auf!
+                std::string output = execCommand(command.c_str());
+                
+                // Falls die Konsole etwas zurückgibt, schicken wir es an AION
+                if (!output.empty()) {
+                    logAion("COMMAND OUTPUT: " + output);
+                    std::string feedbackPrompt = "[SYSTEM EVENT: Output of your command '" + command + "' was:\n" + output + "\nAnalyze this output. If it's an error, fix your code and run it again.]";
+                    
+                    // AION denkt über das Feedback nach
+                    std::thread(callBrain, feedbackPrompt).detach();
+                }
             }
             aiAnswer.erase(cmdStart, cmdEnd - cmdStart + 1);
         }
